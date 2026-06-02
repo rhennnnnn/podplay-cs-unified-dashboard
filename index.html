@@ -6,62 +6,31 @@
 <title>Client Opening Tracker</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --panel: #1e293b;
-    --panel-2: #273449;
-    --border: #334155;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --accent: #6366f1;
-    --accent-h: #818cf8;
-    --green: #22c55e;
-    --amber: #f59e0b;
-    --red: #ef4444;
-    --blue: #38bdf8;
+    --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #6366f1; --accent-h: #818cf8;
+    --green: #22c55e; --amber: #f59e0b; --red: #ef4444; --blue: #38bdf8;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.5;
-  }
-  header {
-    padding: 28px 32px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { padding: 28px 32px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
   header h1 { font-size: 22px; margin: 0; font-weight: 650; }
   header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  button {
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid var(--border);
-    background: var(--panel-2);
-    color: var(--text);
-    padding: 9px 16px;
-    border-radius: 8px;
-    transition: .15s;
-  }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 9px 16px; border-radius: 8px; transition: .15s; }
   button:hover { border-color: var(--accent-h); }
   button.primary { background: var(--accent); border-color: var(--accent); }
   button.primary:hover { background: var(--accent-h); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
   main { padding: 24px 32px 64px; max-width: 1200px; margin: 0 auto; }
+  .status-line { font-size: 12px; color: var(--muted); margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; margin-bottom: 28px; }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
   .stat .n { font-size: 26px; font-weight: 700; }
   .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
-  .filters input, .filters select {
-    font: inherit; background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
-  }
+  .filters input, .filters select { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
   table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; }
   th, td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
@@ -77,22 +46,19 @@
   .flag-post { background: rgba(56,189,248,.18); color: var(--blue); }
   .countdown { color: var(--muted); font-size: 12px; }
   .row-actions button { padding: 5px 10px; font-size: 12px; }
-  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  /* Modal */
+  .check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
   .overlay.open { display: flex; }
   .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 460px; padding: 24px; }
   .modal h2 { margin: 0 0 18px; font-size: 18px; }
   .field { margin-bottom: 14px; }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
-  .field input, .field select, .field textarea {
-    width: 100%; font: inherit; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
-  }
+  .field input, .field select, .field textarea { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
   .field textarea { resize: vertical; min-height: 60px; }
   .modal-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
-  .hint { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--muted); margin-bottom: 18px; }
   .empty { text-align: center; color: var(--muted); padding: 40px; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--border); padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -102,14 +68,12 @@
     <p>Monitor location opening dates and follow-up reminders</p>
   </div>
   <div class="actions">
-    <button class="primary" onclick="openModal()">+ Add Location</button>
-    <button onclick="exportJSON()">Export locations.json</button>
+    <button class="primary" id="addBtn" onclick="requireEdit(openModal)">+ Add Location</button>
+    <button id="lockBtn" onclick="toggleLock()">🔒 Unlock editing</button>
   </div>
 </header>
 <main>
-  <div class="hint">
-    Edits are made in your browser. When done, click <b>Export locations.json</b> and commit the downloaded file to GitHub to share changes with the team. Slack reminders are sent automatically 3 days before and 3 days after each opening.
-  </div>
+  <div class="status-line"><span class="dot" id="liveDot"></span><span id="liveText">Connecting to database…</span></div>
   <div class="stats" id="stats"></div>
   <div class="filters">
     <input id="search" placeholder="Search name or tracker..." oninput="render()" />
@@ -122,12 +86,10 @@
     </select>
   </div>
   <table>
-    <thead>
-      <tr><th>Location</th><th>Opening</th><th>Tracker</th><th>Status</th><th>Follow-ups</th><th></th></tr>
-    </thead>
+    <thead><tr><th>Location</th><th>Opening</th><th>Tracker</th><th>Status</th><th>Follow-ups</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
-  <div id="empty" class="empty" style="display:none">No locations match your filters.</div>
+  <div id="empty" class="empty" style="display:none">No locations yet. Unlock editing and click “Add Location”.</div>
 </main>
 
 <div class="overlay" id="overlay">
@@ -154,50 +116,68 @@
       <button id="deleteBtn" onclick="deleteLocation()" style="color:var(--red)">Delete</button>
       <div style="display:flex;gap:10px">
         <button onclick="closeModal()">Cancel</button>
-        <button class="primary" onclick="saveLocation()">Save</button>
+        <button class="primary" id="saveBtn" onclick="saveLocation()">Save</button>
       </div>
     </div>
   </div>
 </div>
 
-<script>
-let data = { locations: [] };
+<div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const CONFIG = {
+  supabaseUrl: 'https://hhistoyrbwxyywoyhdod.supabase.co',
+  supabaseKey: 'sb_publishable_odHKPTKaGUQ4VRAs5iG5pg_9VtFRgbJ',
+  editPassword: 'openings2026'   // shared team editing password
+};
+
+const sb = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+let data = [];
+let unlocked = sessionStorage.getItem('editUnlocked') === '1';
 const STATUS_LABELS = { "on-track":"On track","at-risk":"At risk","delayed":"Delayed","opened":"Opened" };
 
+function toDb(o){ return { id:o.id, name:o.name, opening_date:o.openingDate, tracker:o.tracker, status:o.status, notes:o.notes, pre_open_done:o.preOpenDone, post_open_done:o.postOpenDone }; }
+function fromDb(r){ return { id:r.id, name:r.name, openingDate:r.opening_date, tracker:r.tracker, status:r.status, notes:r.notes, preOpenDone:r.pre_open_done, postOpenDone:r.post_open_done }; }
+
 async function load() {
-  try {
-    const res = await fetch('locations.json?' + Date.now());
-    if (res.ok) data = await res.json();
-  } catch (e) { console.warn('Could not load locations.json', e); }
-  if (!data.locations) data.locations = [];
+  const { data: rows, error } = await sb.from('locations').select('*');
+  if (error) { setLive(false, 'Database error: ' + error.message); return; }
+  data = rows.map(fromDb);
+  setLive(true, 'Live · synced with database');
   render();
 }
 
-function daysUntil(dateStr) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const d = new Date(dateStr + 'T00:00:00');
-  return Math.round((d - today) / 86400000);
+function setLive(ok, msg) {
+  document.getElementById('liveDot').className = 'dot' + (ok ? ' live' : '');
+  document.getElementById('liveText').textContent = msg;
 }
 
-function followFlags(loc) {
-  const dd = daysUntil(loc.openingDate);
-  const flags = [];
-  if (!loc.preOpenDone && dd <= 3 && dd >= 0) flags.push('<span class="flag flag-pre">Pre-open due</span>');
-  if (!loc.postOpenDone && dd <= -3) flags.push('<span class="flag flag-post">Post-open due</span>');
-  return flags.join('');
+// Realtime: refresh whenever anyone on the team changes data
+sb.channel('locations-changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => load())
+  .subscribe();
+
+function daysUntil(dateStr) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.round((new Date(dateStr + 'T00:00:00') - today) / 86400000);
 }
+function followFlags(loc) {
+  const dd = daysUntil(loc.openingDate); const f = [];
+  if (!loc.preOpenDone && dd <= 3 && dd >= 0) f.push('<span class="flag flag-pre">Pre-open due</span>');
+  if (!loc.postOpenDone && dd <= -3) f.push('<span class="flag flag-post">Post-open due</span>');
+  return f.join('');
+}
+function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 function render() {
   const q = document.getElementById('search').value.toLowerCase();
   const sf = document.getElementById('statusFilter').value;
-  const rows = document.getElementById('rows');
-  const list = data.locations
+  const list = data
     .filter(l => (l.name + ' ' + (l.tracker||'')).toLowerCase().includes(q))
     .filter(l => !sf || l.status === sf)
-    .sort((a,b) => a.openingDate.localeCompare(b.openingDate));
-
-  rows.innerHTML = list.map(l => {
+    .sort((a,b) => (a.openingDate||'').localeCompare(b.openingDate||''));
+  document.getElementById('rows').innerHTML = list.map(l => {
     const dd = daysUntil(l.openingDate);
     const cd = l.status === 'opened' ? 'Opened' : (dd > 0 ? `in ${dd}d` : dd === 0 ? 'today' : `${-dd}d ago`);
     return `<tr>
@@ -206,18 +186,17 @@ function render() {
       <td>${esc(l.tracker||'—')}</td>
       <td><span class="badge b-${l.status}">${STATUS_LABELS[l.status]||l.status}</span></td>
       <td>${followFlags(l) || '<span class="countdown">—</span>'}</td>
-      <td class="row-actions"><button onclick="openModal('${l.id}')">Edit</button></td>
+      <td class="row-actions"><button onclick="requireEdit(()=>openModal('${l.id}'))">Edit</button></td>
     </tr>`;
   }).join('');
   document.getElementById('empty').style.display = list.length ? 'none' : 'block';
   renderStats();
 }
-
 function renderStats() {
-  const total = data.locations.length;
-  const upcoming = data.locations.filter(l => l.status!=='opened' && daysUntil(l.openingDate) >= 0).length;
-  const needFollow = data.locations.filter(l => followFlags(l)).length;
-  const atRisk = data.locations.filter(l => l.status==='at-risk'||l.status==='delayed').length;
+  const total = data.length;
+  const upcoming = data.filter(l => l.status!=='opened' && daysUntil(l.openingDate) >= 0).length;
+  const needFollow = data.filter(l => followFlags(l)).length;
+  const atRisk = data.filter(l => l.status==='at-risk'||l.status==='delayed').length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>
     <div class="stat"><div class="n">${upcoming}</div><div class="l">Upcoming</div></div>
@@ -225,12 +204,29 @@ function renderStats() {
     <div class="stat"><div class="n" style="color:var(--red)">${atRisk}</div><div class="l">At risk / delayed</div></div>`;
 }
 
-function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// ---- Edit lock ----
+function setLockUI() {
+  document.getElementById('lockBtn').textContent = unlocked ? '🔓 Editing unlocked' : '🔒 Unlock editing';
+  document.getElementById('addBtn').disabled = !unlocked;
+}
+function toggleLock() {
+  if (unlocked) { unlocked = false; sessionStorage.removeItem('editUnlocked'); setLockUI(); return; }
+  const p = prompt('Enter the team editing password:');
+  if (p === null) return;
+  if (p === CONFIG.editPassword) { unlocked = true; sessionStorage.setItem('editUnlocked','1'); setLockUI(); toast('Editing unlocked'); }
+  else alert('Incorrect password.');
+}
+function requireEdit(fn) {
+  if (unlocked) return fn();
+  const p = prompt('Enter the team editing password:');
+  if (p === null) return;
+  if (p === CONFIG.editPassword) { unlocked = true; sessionStorage.setItem('editUnlocked','1'); setLockUI(); fn(); }
+  else alert('Incorrect password.');
+}
 
 function openModal(id) {
-  const o = document.getElementById('overlay');
   if (id) {
-    const l = data.locations.find(x => x.id === id);
+    const l = data.find(x => x.id === id);
     document.getElementById('modalTitle').textContent = 'Edit Location';
     document.getElementById('f-id').value = l.id;
     document.getElementById('f-name').value = l.name;
@@ -250,51 +246,44 @@ function openModal(id) {
     document.getElementById('f-post').checked = false;
     document.getElementById('deleteBtn').style.display = 'none';
   }
-  o.classList.add('open');
+  document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
 
-function saveLocation() {
+async function saveLocation() {
   const id = document.getElementById('f-id').value;
   const name = document.getElementById('f-name').value.trim();
   const date = document.getElementById('f-date').value;
   if (!name || !date) { alert('Name and opening date are required.'); return; }
   const obj = {
     id: id || 'loc-' + Date.now(),
-    name,
-    openingDate: date,
+    name, openingDate: date,
     tracker: document.getElementById('f-tracker').value.trim(),
     status: document.getElementById('f-status').value,
     notes: document.getElementById('f-notes').value.trim(),
     preOpenDone: document.getElementById('f-pre').checked,
     postOpenDone: document.getElementById('f-post').checked
   };
-  if (id) {
-    const i = data.locations.findIndex(x => x.id === id);
-    data.locations[i] = obj;
-  } else {
-    data.locations.push(obj);
-  }
-  closeModal(); render();
+  document.getElementById('saveBtn').disabled = true;
+  const { error } = await sb.from('locations').upsert(toDb(obj));
+  document.getElementById('saveBtn').disabled = false;
+  if (error) { alert('Save failed: ' + error.message); return; }
+  closeModal(); toast('Saved'); load();
 }
 
-function deleteLocation() {
+async function deleteLocation() {
   const id = document.getElementById('f-id').value;
-  if (id && confirm('Delete this location?')) {
-    data.locations = data.locations.filter(x => x.id !== id);
-    closeModal(); render();
-  }
+  if (!id || !confirm('Delete this location?')) return;
+  const { error } = await sb.from('locations').delete().eq('id', id);
+  if (error) { alert('Delete failed: ' + error.message); return; }
+  closeModal(); toast('Deleted'); load();
 }
 
-function exportJSON() {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'locations.json';
-  a.click();
-}
+let toastT;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2000); }
 
 document.getElementById('overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
+setLockUI();
 load();
 </script>
 </body>
