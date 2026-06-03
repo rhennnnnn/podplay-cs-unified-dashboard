@@ -212,10 +212,17 @@ function setLive(ok, msg) {
   document.getElementById('liveText').textContent = msg;
 }
 
-// Realtime: refresh whenever anyone on the team changes data
+// Realtime: refresh instantly whenever anyone on the team changes data
 sb.channel('locations-changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => load())
   .subscribe();
+
+// Backup auto-refresh: reload every 20s so the view stays current even if
+// realtime isn't enabled. Skipped while a dialog is open so it never disrupts editing.
+setInterval(() => {
+  const anyOpen = ['overlay','pwOverlay','confirmOverlay'].some(id => document.getElementById(id).classList.contains('open'));
+  if (!anyOpen && document.visibilityState === 'visible') load();
+}, 20000);
 
 function daysUntil(dateStr) {
   const today = new Date(); today.setHours(0,0,0,0);
