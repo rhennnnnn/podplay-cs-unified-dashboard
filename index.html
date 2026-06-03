@@ -104,9 +104,14 @@
       <option value="delayed">Delayed</option>
       <option value="opened">Opened</option>
     </select>
+    <select id="tierFilter" onchange="currentPage=1; render()">
+      <option value="">All Tiers</option>
+      <option value="Basic (+)">Basic (+)</option>
+      <option value="Pro/Auto (+)">Pro/Auto (+)</option>
+    </select>
   </div>
   <table>
-    <thead><tr><th>Client</th><th>Location</th><th>Opening</th><th>Tracker</th><th>Status</th><th>Follow-ups</th><th></th></tr></thead>
+    <thead><tr><th>Client</th><th>Location</th><th>Tier</th><th>Opening</th><th>Tracker</th><th>Status</th><th>Follow-ups</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <div id="empty" class="empty" style="display:none">No clients yet. Unlock editing and click “Add Client”.</div>
@@ -119,6 +124,12 @@
     <input type="hidden" id="f-id" />
     <div class="field"><label>Client Name</label><input id="f-client" /></div>
     <div class="field"><label>Location Name</label><input id="f-name" /></div>
+    <div class="field"><label>PodPlay Tier</label>
+      <select id="f-tier">
+        <option value="Basic (+)">Basic (+)</option>
+        <option value="Pro/Auto (+)">Pro/Auto (+)</option>
+      </select>
+    </div>
     <div class="field"><label>Opening Date</label><input id="f-date" type="date" /></div>
     <div class="field"><label>Who's Tracking</label><input id="f-tracker" /></div>
     <div class="field"><label>Status</label>
@@ -196,8 +207,8 @@ const PAGE_SIZE = 10;
 let unlocked = sessionStorage.getItem('editUnlocked') === '1';
 const STATUS_LABELS = { "on-track":"On track","at-risk":"At risk","delayed":"Delayed","opened":"Opened" };
 
-function toDb(o){ return { id:o.id, client_name:o.clientName, name:o.name, opening_date:o.openingDate, tracker:o.tracker, status:o.status, notes:o.notes, pre_open_done:o.preOpenDone, post_open_done:o.postOpenDone }; }
-function fromDb(r){ return { id:r.id, clientName:r.client_name, name:r.name, openingDate:r.opening_date, tracker:r.tracker, status:r.status, notes:r.notes, preOpenDone:r.pre_open_done, postOpenDone:r.post_open_done }; }
+function toDb(o){ return { id:o.id, client_name:o.clientName, name:o.name, tier:o.tier, opening_date:o.openingDate, tracker:o.tracker, status:o.status, notes:o.notes, pre_open_done:o.preOpenDone, post_open_done:o.postOpenDone }; }
+function fromDb(r){ return { id:r.id, clientName:r.client_name, name:r.name, tier:r.tier, openingDate:r.opening_date, tracker:r.tracker, status:r.status, notes:r.notes, preOpenDone:r.pre_open_done, postOpenDone:r.post_open_done }; }
 
 async function load() {
   const { data: rows, error } = await sb.from('locations').select('*');
@@ -239,9 +250,11 @@ function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;'
 function render() {
   const q = document.getElementById('search').value.toLowerCase();
   const sf = document.getElementById('statusFilter').value;
+  const tf = document.getElementById('tierFilter').value;
   const list = data
     .filter(l => (l.name + ' ' + (l.clientName||'') + ' ' + (l.tracker||'')).toLowerCase().includes(q))
     .filter(l => !sf || l.status === sf)
+    .filter(l => !tf || l.tier === tf)
     .sort((a,b) => (a.openingDate||'').localeCompare(b.openingDate||''));
 
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
@@ -255,6 +268,7 @@ function render() {
     return `<tr>
       <td><b>${esc(l.clientName||'—')}</b></td>
       <td>${esc(l.name)}${l.notes?`<div class="countdown">${esc(l.notes)}</div>`:''}</td>
+      <td>${esc(l.tier||'—')}</td>
       <td>${esc(l.openingDate)}<div class="countdown">${cd}</div></td>
       <td>${esc(l.tracker||'—')}</td>
       <td><span class="badge b-${l.status}">${STATUS_LABELS[l.status]||l.status}</span></td>
@@ -338,6 +352,7 @@ function openModal(id) {
     document.getElementById('f-id').value = l.id;
     document.getElementById('f-client').value = l.clientName || '';
     document.getElementById('f-name').value = l.name;
+    document.getElementById('f-tier').value = l.tier || 'Basic (+)';
     document.getElementById('f-date').value = l.openingDate;
     document.getElementById('f-tracker').value = l.tracker || '';
     document.getElementById('f-status').value = l.status;
@@ -349,6 +364,7 @@ function openModal(id) {
     document.getElementById('modalTitle').textContent = 'Add Client';
     ['f-id','f-client','f-name','f-tracker','f-notes'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('f-date').value = '';
+    document.getElementById('f-tier').value = 'Basic (+)';
     document.getElementById('f-status').value = 'on-track';
     document.getElementById('f-pre').checked = false;
     document.getElementById('f-post').checked = false;
@@ -366,7 +382,9 @@ async function saveLocation() {
   const obj = {
     id: id || 'loc-' + Date.now(),
     clientName: document.getElementById('f-client').value.trim(),
-    name, openingDate: date,
+    name,
+    tier: document.getElementById('f-tier').value,
+    openingDate: date,
     tracker: document.getElementById('f-tracker').value.trim(),
     status: document.getElementById('f-status').value,
     notes: document.getElementById('f-notes').value.trim(),
