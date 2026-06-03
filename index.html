@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Client Opening Tracker</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%236366f1'/%3E%3Cpath d='M32 14c-7.2 0-13 5.8-13 13 0 9.5 13 23 13 23s13-13.5 13-23c0-7.2-5.8-13-13-13zm0 17.5a4.5 4.5 0 110-9 4.5 4.5 0 010 9z' fill='white'/%3E%3C/svg%3E" />
+<link rel="icon" href="assets/favicon.ico" />
 <style>
   :root {
     --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
@@ -60,6 +60,11 @@
   .field textarea { resize: vertical; min-height: 60px; }
   .modal-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
   .empty { text-align: center; color: var(--muted); padding: 40px; }
+  .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .pager .info { font-size: 12px; color: var(--muted); }
+  .pager .pages { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pager .pages button { padding: 6px 12px; font-size: 13px; min-width: 38px; }
+  .pager .pages button.active { background: var(--accent); border-color: var(--accent); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--border); padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; }
   .toast.show { opacity: 1; }
 </style>
@@ -79,8 +84,8 @@
   <div class="status-line"><span class="dot" id="liveDot"></span><span id="liveText">Connecting to database…</span></div>
   <div class="stats" id="stats"></div>
   <div class="filters">
-    <input id="search" placeholder="Search name or tracker..." oninput="render()" />
-    <select id="statusFilter" onchange="render()">
+    <input id="search" placeholder="Search name or tracker..." oninput="currentPage=1; render()" />
+    <select id="statusFilter" onchange="currentPage=1; render()">
       <option value="">All Statuses</option>
       <option value="on-track">On Track</option>
       <option value="at-risk">At Risk</option>
@@ -93,6 +98,7 @@
     <tbody id="rows"></tbody>
   </table>
   <div id="empty" class="empty" style="display:none">No clients yet. Unlock editing and click “Add Client”.</div>
+  <div class="pager" id="pager"></div>
 </main>
 
 <div class="overlay" id="overlay">
@@ -138,6 +144,8 @@ const CONFIG = {
 
 const sb = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let data = [];
+let currentPage = 1;
+const PAGE_SIZE = 10;
 let unlocked = sessionStorage.getItem('editUnlocked') === '1';
 const STATUS_LABELS = { "on-track":"On track","at-risk":"At risk","delayed":"Delayed","opened":"Opened" };
 
@@ -181,7 +189,13 @@ function render() {
     .filter(l => (l.name + ' ' + (l.clientName||'') + ' ' + (l.tracker||'')).toLowerCase().includes(q))
     .filter(l => !sf || l.status === sf)
     .sort((a,b) => (a.openingDate||'').localeCompare(b.openingDate||''));
-  document.getElementById('rows').innerHTML = list.map(l => {
+
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = list.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('rows').innerHTML = pageItems.map(l => {
     const dd = daysUntil(l.openingDate);
     const cd = l.status === 'opened' ? 'Opened' : (dd > 0 ? `in ${dd}d` : dd === 0 ? 'today' : `${-dd}d ago`);
     return `<tr>
@@ -195,7 +209,25 @@ function render() {
     </tr>`;
   }).join('');
   document.getElementById('empty').style.display = list.length ? 'none' : 'block';
+  renderPager(list.length, totalPages, start, pageItems.length);
   renderStats();
+}
+
+function renderPager(total, totalPages, start, shown) {
+  const pager = document.getElementById('pager');
+  if (total === 0) { pager.innerHTML = ''; return; }
+  let btns = `<button onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹ Prev</button>`;
+  for (let p = 1; p <= totalPages; p++) {
+    btns += `<button class="${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  }
+  btns += `<button onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>Next ›</button>`;
+  pager.innerHTML = `<span class="info">Showing ${start+1}–${start+shown} of ${total}</span><span class="pages">${btns}</span>`;
+}
+
+function goPage(p) {
+  currentPage = p;
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function renderStats() {
   const total = data.length;

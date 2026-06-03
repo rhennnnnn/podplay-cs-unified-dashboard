@@ -2,10 +2,19 @@
 
 A live website for tracking client location opening dates, who's tracking each one, and follow-up reminders sent automatically via Slack 3 days before and 3 days after each opening.
 
-## What's here
+## Project structure
 
-- `index.html` — the website (view, add, edit, delete locations). Data is stored in a live Supabase database, so the whole team sees the same data in real time.
-- `README.md` — this file.
+```
+/ (repo root)
+├── index.html              the website / app (must stay at root for GitHub Pages)
+├── README.md               this file
+├── assets/
+│   └── favicon.ico         browser tab icon (and any future images)
+└── docs/
+    └── database-setup.sql  Supabase table + security setup, for reference
+```
+
+Data is stored in a live Supabase database, so the whole team sees the same data in real time.
 
 ## How it works
 
