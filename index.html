@@ -145,7 +145,7 @@ const CONFIG = {
 const sb = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let data = [];
 let currentPage = 1;
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 7;
 let unlocked = sessionStorage.getItem('editUnlocked') === '1';
 const STATUS_LABELS = { "on-track":"On track","at-risk":"At risk","delayed":"Delayed","opened":"Opened" };
 
