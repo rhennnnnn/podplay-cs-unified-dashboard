@@ -22,15 +22,18 @@ The site connects to a **Supabase** database (free tier). Anyone with the link c
 
 Each location tracks: name, opening date, tracker, status, notes, and whether the pre-open and post-open follow-ups are done. Rows automatically flag when a follow-up is due (within 3 days before opening, or 3+ days after).
 
-## Editing the password
+## Logins (Supabase Auth)
 
-The shared editing password is set near the top of `index.html`:
+The site requires a real login. Data is readable and editable only by accounts you create in Supabase, so there is no longer a shared password.
 
-```js
-const CONFIG = { ..., editPassword: 'your-password-here' };
-```
+To add a teammate: Supabase dashboard → Authentication → Users → Add user (email + password, tick "Auto Confirm User"). Public sign-up is turned off, so only accounts you create can log in. To remove someone's access, delete their user there.
 
-Change that value and re-upload `index.html` to GitHub to update it.
+## Features
+
+- Active Queue / Opened / Activity Log tabs.
+- Opened workflow: marking a client "Opened" records the actual open date and a "how it went" note.
+- Activity Log: every add/edit/delete/opened is recorded with who did it and when.
+- Export CSV: downloads the rows currently shown (respects tab + filters).
 
 ## Hosting on GitHub Pages
 

@@ -1,4 +1,18 @@
 <!DOCTYPE html>
+<!--
+  CLIENT OPENING TRACKER
+  A one-file web app (HTML + CSS + JavaScript) for tracking client location
+  openings. Data is stored in a Supabase database; the page reads and writes it
+  directly so the whole team shares one live list. Hosted as a static site on
+  GitHub Pages.
+
+  Layout of this file:
+    1. <style>  — all the visual styling (colors, table, dialogs, tabs)
+    2. <body>   — the page structure: header, stats, tabs, filters, table, dialogs
+    3. <script> — the logic: load data, render the table, add/edit/delete, password lock
+  The JavaScript section is commented function-by-function. Database setup
+  (table columns, security, realtime) lives in docs/database-setup.sql.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -87,26 +101,58 @@
   .danger:hover { background: #dc2626; border-color: #dc2626; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--border); padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; }
   .toast.show { opacity: 1; }
+  /* Login screen */
+  .login-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--bg); z-index: 200; }
+  .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 360px; text-align: center; }
+  .login-logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px; }
+  .login-card h1 { font-size: 20px; margin: 0 0 4px; }
+  .login-card p { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .login-card input { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin-bottom: 10px; }
+  .login-card .err { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+  .login-card .primary { width: 100%; padding: 12px; }
+  .login-card .login-hint { font-size: 12px; margin: 16px 0 0; }
+  /* Signed-in user box in the header */
+  .userbox { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
+
+<!-- Login screen: covers the whole page until the user signs in. -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">📍</div>
+    <h1>Client Opening Tracker</h1>
+    <p>Sign in to continue</p>
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus();" />
+    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn();" />
+    <div class="err" id="loginErr"></div>
+    <button class="primary" id="loginBtn" onclick="signIn()">Sign in</button>
+    <p class="login-hint">Accounts are created by your admin in Supabase. Contact them if you can't sign in.</p>
+  </div>
+</div>
+
+<!-- The app. Hidden until logged in (see showApp/hideApp). -->
+<div id="app" style="display:none">
 <header>
   <div>
     <h1>Client Opening Tracker</h1>
     <p>Monitor location opening dates and follow-up reminders</p>
   </div>
   <div class="actions">
-    <button class="primary" id="addBtn" onclick="requireEdit(openModal)">+ Add Client</button>
-    <button id="lockBtn" onclick="toggleLock()">🔒 Unlock editing</button>
+    <button class="primary" id="addBtn" onclick="openModal()">+ Add Client</button>
+    <button id="exportBtn" onclick="exportCSV()">⬇ Export CSV</button>
+    <span class="userbox"><span id="userEmail"></span><button onclick="signOut()">Sign out</button></span>
   </div>
 </header>
 <main>
   <div class="status-line"><span class="dot" id="liveDot"></span><span id="liveText">Connecting to database…</span></div>
   <div class="stats" id="stats"></div>
   <div class="tabs">
-    <button class="tab active" id="tab-active" onclick="switchView('active')">Active queue <span class="pill" id="cnt-active">0</span></button>
+    <button class="tab active" id="tab-active" onclick="switchView('active')">Active Queue <span class="pill" id="cnt-active">0</span></button>
     <button class="tab" id="tab-opened" onclick="switchView('opened')">Opened <span class="pill" id="cnt-opened">0</span></button>
+    <button class="tab" id="tab-activity" onclick="switchView('activity')">Activity Log</button>
   </div>
+  <div id="tableView">
   <div class="filters">
     <input id="search" placeholder="Search name or tracker..." oninput="currentPage=1; render()" />
     <select id="statusFilter" onchange="currentPage=1; render()">
@@ -129,8 +175,19 @@
     <thead><tr><th>Client</th><th>Location</th><th>Tier</th><th>Opening</th><th>Tracker</th><th>Status</th><th>Follow-ups</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
-  <div id="empty" class="empty" style="display:none">No clients yet. Unlock editing and click “Add Client”.</div>
+  <div id="empty" class="empty" style="display:none">No clients here yet. Click “Add Client” to get started.</div>
   <div class="pager" id="pager"></div>
+  </div><!-- /#tableView -->
+
+  <!-- Activity Log view (shown when the Activity Log tab is selected) -->
+  <div id="activityPanel" style="display:none">
+    <table>
+      <colgroup><col style="width:18%"><col style="width:12%"><col style="width:30%"><col style="width:40%"></colgroup>
+      <thead><tr><th>When</th><th>Action</th><th>Client / Location</th><th>By</th></tr></thead>
+      <tbody id="activityRows"></tbody>
+    </table>
+    <div id="activityEmpty" class="empty" style="display:none">No activity recorded yet.</div>
+  </div>
 </main>
 
 <div class="overlay" id="overlay">
@@ -148,12 +205,17 @@
     <div class="field"><label>Opening Date</label><input id="f-date" type="date" /></div>
     <div class="field"><label>Who's Tracking</label><input id="f-tracker" /></div>
     <div class="field"><label>Status</label>
-      <select id="f-status">
+      <select id="f-status" onchange="toggleOpenedFields()">
         <option value="on-track">On track</option>
         <option value="at-risk">At risk</option>
         <option value="delayed">Delayed</option>
         <option value="opened">Opened</option>
       </select>
+    </div>
+    <!-- These two only appear when Status = Opened (the "Opened workflow") -->
+    <div id="openedFields" style="display:none">
+      <div class="field"><label>Actual open date</label><input id="f-opened-date" type="date" /></div>
+      <div class="field"><label>How did the opening go?</label><textarea id="f-open-outcome" placeholder="Any problems, wins, or notes from the opening..."></textarea></div>
     </div>
     <div class="field"><label>Notes / things to check</label><textarea id="f-notes"></textarea></div>
     <div class="field checks">
@@ -166,21 +228,6 @@
         <button onclick="closeModal()">Cancel</button>
         <button class="primary" id="saveBtn" onclick="saveLocation()">Save</button>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- Password modal -->
-<div class="overlay" id="pwOverlay">
-  <div class="modal sm">
-    <div class="icon lock">🔒</div>
-    <h2>Enter Team Password</h2>
-    <p>This unlocks adding and editing clients.</p>
-    <input type="password" id="pwInput" placeholder="Password" onkeydown="if(event.key==='Enter')submitPassword();" />
-    <div class="err" id="pwErr"></div>
-    <div class="btns">
-      <button onclick="closePwModal()">Cancel</button>
-      <button class="primary" onclick="submitPassword()">Unlock</button>
     </div>
   </div>
 </div>
@@ -199,34 +246,74 @@
 </div>
 
 <div class="toast" id="toast"></div>
+</div><!-- /#app -->
 
+<!-- Supabase client library (provides the `supabase` global used below) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* ============================================================================
+   CLIENT OPENING TRACKER
+   A single-page app. All data lives in a Supabase table called `locations`.
+   The page reads/writes that table directly, so every teammate sees the same
+   data live. Access requires a real login (Supabase Auth); every change is
+   written to an `activity_log` table.
+   Sections below: CONFIG → state → AUTH → data load → helpers → rendering →
+   add/edit modal → delete → activity log → CSV export → misc/startup.
+   ========================================================================== */
+
+// --- Connection settings -----------------------------------------------------
 const CONFIG = {
-  supabaseUrl: 'https://hhistoyrbwxyywoyhdod.supabase.co',
-  supabaseKey: 'sb_publishable_odHKPTKaGUQ4VRAs5iG5pg_9VtFRgbJ',
-  // SHA-256 hash of the shared team password (the plain password is never stored here).
-  // To change it: compute the SHA-256 of the new password and paste the hash below.
-  editPasswordHash: '6f14f8a03d4ce4addef178902136149642a5d5bb9da6e0548616c06dff03fb60'
+  supabaseUrl: 'https://hhistoyrbwxyywoyhdod.supabase.co',   // the project's API URL
+  supabaseKey: 'sb_publishable_odHKPTKaGUQ4VRAs5iG5pg_9VtFRgbJ' // public ("anon") key — safe to expose
 };
 
-async function sha256(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-const sb = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-let data = [];
-let currentPage = 1;
-let currentView = 'active';   // 'active' = not yet opened, 'opened' = opened archive
-const PAGE_SIZE = 10;
-let unlocked = sessionStorage.getItem('editUnlocked') === '1';
+// --- App state ---------------------------------------------------------------
+const sb = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey); // DB client
+let data = [];                 // all rows loaded from the database (camelCase form)
+let currentUser = null;        // the logged-in Supabase user (null when signed out)
+let currentPage = 1;           // which page of the table is showing
+let currentView = 'active';    // 'active' | 'opened' | 'activity'
+const PAGE_SIZE = 10;          // rows shown per page
 const STATUS_LABELS = { "on-track":"On track","at-risk":"At risk","delayed":"Delayed","opened":"Opened" };
 
-function toDb(o){ return { id:o.id, client_name:o.clientName, name:o.name, tier:o.tier, opening_date:o.openingDate, tracker:o.tracker, status:o.status, notes:o.notes, pre_open_done:o.preOpenDone, post_open_done:o.postOpenDone }; }
-function fromDb(r){ return { id:r.id, clientName:r.client_name, name:r.name, tier:r.tier, openingDate:r.opening_date, tracker:r.tracker, status:r.status, notes:r.notes, preOpenDone:r.pre_open_done, postOpenDone:r.post_open_done }; }
+// The database uses snake_case column names; the app uses camelCase. These two
+// helpers translate between the two shapes whenever we read or write.
+function toDb(o){ return { id:o.id, client_name:o.clientName, name:o.name, tier:o.tier, opening_date:o.openingDate, tracker:o.tracker, status:o.status, notes:o.notes, pre_open_done:o.preOpenDone, post_open_done:o.postOpenDone, opened_date:o.openedDate||null, open_outcome:o.openOutcome||null }; }
+function fromDb(r){ return { id:r.id, clientName:r.client_name, name:r.name, tier:r.tier, openingDate:r.opening_date, tracker:r.tracker, status:r.status, notes:r.notes, preOpenDone:r.pre_open_done, postOpenDone:r.post_open_done, openedDate:r.opened_date, openOutcome:r.open_outcome }; }
 
+/* --- Authentication ----------------------------------------------------------
+   The app stays hidden behind a login screen until a valid session exists.
+   Accounts are created by an admin in the Supabase dashboard.                */
+// Try to sign in with the email + password from the login form.
+async function signIn() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  document.getElementById('loginErr').textContent = '';
+  document.getElementById('loginBtn').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  document.getElementById('loginBtn').disabled = false;
+  if (error) { document.getElementById('loginErr').textContent = error.message; }
+  // On success, onAuthStateChange (below) reveals the app automatically.
+}
+// Sign the current user out (returns them to the login screen).
+async function signOut() { await sb.auth.signOut(); }
+
+// React to login/logout. Shows or hides the app and loads data when signed in.
+function handleAuth(session) {
+  currentUser = session ? session.user : null;
+  const loggedIn = !!currentUser;
+  document.getElementById('loginScreen').style.display = loggedIn ? 'none' : 'flex';
+  document.getElementById('app').style.display = loggedIn ? 'block' : 'none';
+  if (loggedIn) {
+    document.getElementById('userEmail').textContent = currentUser.email;
+    document.getElementById('loginPass').value = '';
+    load();
+  }
+}
+
+// Fetch every row from the database into `data`, then redraw the table.
 async function load() {
+  if (!currentUser) return;     // only logged-in users can read data
   const { data: rows, error } = await sb.from('locations').select('*');
   if (error) { setLive(false, 'Database error: ' + error.message); return; }
   data = rows.map(fromDb);
@@ -234,60 +321,88 @@ async function load() {
   render();
 }
 
+// Update the little "Live / Database error" status line under the header.
 function setLive(ok, msg) {
   document.getElementById('liveDot').className = 'dot' + (ok ? ' live' : '');
   document.getElementById('liveText').textContent = msg;
 }
 
-// Realtime: refresh instantly whenever anyone on the team changes data
+// Realtime: refresh instantly whenever anyone on the team changes data.
+// (Requires the table to be added to the supabase_realtime publication — see docs/.)
 sb.channel('locations-changes')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => load())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => { load(); if (currentView === 'activity') renderActivity(); })
   .subscribe();
 
 // Backup auto-refresh: reload every 20s so the view stays current even if
 // realtime isn't enabled. Skipped while a dialog is open so it never disrupts editing.
 setInterval(() => {
-  const anyOpen = ['overlay','pwOverlay','confirmOverlay'].some(id => document.getElementById(id).classList.contains('open'));
-  if (!anyOpen && document.visibilityState === 'visible') load();
+  if (!currentUser) return;
+  const anyOpen = ['overlay','confirmOverlay'].some(id => document.getElementById(id).classList.contains('open'));
+  if (!anyOpen && document.visibilityState === 'visible') { load(); if (currentView === 'activity') renderActivity(); }
 }, 20000);
 
+// --- Date + follow-up helpers ------------------------------------------------
+// Whole days from today until the given YYYY-MM-DD (negative = in the past).
 function daysUntil(dateStr) {
   const today = new Date(); today.setHours(0,0,0,0);
   return Math.round((new Date(dateStr + 'T00:00:00') - today) / 86400000);
 }
+// Returns the HTML flag(s) a row should show: a "Pre-open due" badge when the
+// opening is within 3 days (and pre-open isn't ticked), and a "Post-open due"
+// badge once it's 3+ days past opening (and post-open isn't ticked).
 function followFlags(loc) {
   const dd = daysUntil(loc.openingDate); const f = [];
   if (!loc.preOpenDone && dd <= 3 && dd >= 0) f.push('<span class="flag flag-pre">Pre-open due</span>');
   if (!loc.postOpenDone && dd <= -3) f.push('<span class="flag flag-post">Post-open due</span>');
   return f.join('');
 }
+// Escape user text before putting it in HTML, to prevent broken markup / injection.
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-function render() {
-  const q = document.getElementById('search').value.toLowerCase();
-  const sf = document.getElementById('statusFilter').value;
-  const tf = document.getElementById('tierFilter').value;
-  // Update tab counts + active state
-  const openedCount = data.filter(l => l.status === 'opened').length;
-  document.getElementById('cnt-opened').textContent = openedCount;
-  document.getElementById('cnt-active').textContent = data.length - openedCount;
-  document.getElementById('tab-active').classList.toggle('active', currentView === 'active');
-  document.getElementById('tab-opened').classList.toggle('active', currentView === 'opened');
-  // Status filter only applies to the active queue
-  document.getElementById('statusFilter').style.display = currentView === 'opened' ? 'none' : '';
-
-  const list = data
+// Returns the rows to show given the current tab/search/filters, sorted by date.
+// Shared by render() and the CSV export so they always match.
+function getFilteredList() {
+  const q = document.getElementById('search').value.toLowerCase();   // search text
+  const sf = document.getElementById('statusFilter').value;          // status filter
+  const tf = document.getElementById('tierFilter').value;            // tier filter
+  return data
     .filter(l => currentView === 'opened' ? l.status === 'opened' : l.status !== 'opened')
     .filter(l => (l.name + ' ' + (l.clientName||'') + ' ' + (l.tracker||'')).toLowerCase().includes(q))
     .filter(l => currentView === 'opened' || !sf || l.status === sf)
     .filter(l => !tf || l.tier === tf)
     .sort((a,b) => (a.openingDate||'').localeCompare(b.openingDate||''));
+}
 
+// --- Main rendering ----------------------------------------------------------
+// Rebuilds the table from `data`, applying the current tab, search box,
+// and the status/tier filters, then paginating the result.
+function render() {
+  // Update tab counts + which tab looks active
+  const openedCount = data.filter(l => l.status === 'opened').length;
+  document.getElementById('cnt-opened').textContent = openedCount;
+  document.getElementById('cnt-active').textContent = data.length - openedCount;
+  document.getElementById('tab-active').classList.toggle('active', currentView === 'active');
+  document.getElementById('tab-opened').classList.toggle('active', currentView === 'opened');
+  document.getElementById('tab-activity').classList.toggle('active', currentView === 'activity');
+
+  // The Activity Log tab swaps the table out for the log panel.
+  const isActivity = currentView === 'activity';
+  document.getElementById('tableView').style.display = isActivity ? 'none' : '';
+  document.getElementById('activityPanel').style.display = isActivity ? 'block' : 'none';
+  if (isActivity) { renderActivity(); return; }
+
+  // Status filter only applies to the active queue
+  document.getElementById('statusFilter').style.display = currentView === 'opened' ? 'none' : '';
+
+  const list = getFilteredList();
+
+  // Work out which slice of rows this page should show.
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   if (currentPage > totalPages) currentPage = totalPages;
   const start = (currentPage - 1) * PAGE_SIZE;
   const pageItems = list.slice(start, start + PAGE_SIZE);
 
+  // Build the table rows. `cd` is the small countdown text under the date.
   document.getElementById('rows').innerHTML = pageItems.map(l => {
     const dd = daysUntil(l.openingDate);
     const cd = l.status === 'opened' ? 'Opened' : (dd > 0 ? `in ${dd}d` : dd === 0 ? 'today' : `${-dd}d ago`);
@@ -299,7 +414,7 @@ function render() {
       <td>${esc(l.tracker||'—')}</td>
       <td><span class="badge b-${l.status}">${STATUS_LABELS[l.status]||l.status}</span></td>
       <td>${followFlags(l) || '<span class="countdown">—</span>'}</td>
-      <td class="row-actions"><button onclick="requireEdit(()=>openModal('${l.id}'))">Edit</button></td>
+      <td class="row-actions"><button onclick="openModal('${l.id}')">Edit</button></td>
     </tr>`;
   }).join('');
   document.getElementById('empty').style.display = list.length ? 'none' : 'block';
@@ -307,6 +422,7 @@ function render() {
   renderStats();
 }
 
+// Draw the "Showing x–y of N" text and the page-number buttons.
 function renderPager(total, totalPages, start, shown) {
   const pager = document.getElementById('pager');
   if (total === 0) { pager.innerHTML = ''; return; }
@@ -318,67 +434,45 @@ function renderPager(total, totalPages, start, shown) {
   pager.innerHTML = `<span class="info">Showing ${start+1}–${start+shown} of ${total}</span><span class="pages">${btns}</span>`;
 }
 
+// Switch between the "Active Queue", "Opened", and "Activity Log" tabs.
 function switchView(v) {
   currentView = v;
   currentPage = 1;
   render();
 }
 
+// Jump to a specific page number and scroll back to the top.
 function goPage(p) {
   currentPage = p;
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+// Recompute and draw the summary cards at the top from the full dataset.
 function renderStats() {
   const total = data.length;
   const upcoming = data.filter(l => l.status!=='opened' && daysUntil(l.openingDate) >= 0).length;
-  const needFollow = data.filter(l => followFlags(l)).length;
+  const needFollow = data.filter(l => followFlags(l)).length;          // currently have a pre/post-open flag
   const atRisk = data.filter(l => l.status==='at-risk'||l.status==='delayed').length;
+  const opened = data.filter(l => l.status==='opened').length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>
     <div class="stat"><div class="n">${upcoming}</div><div class="l">Upcoming</div></div>
     <div class="stat"><div class="n" style="color:var(--amber)">${needFollow}</div><div class="l">Need follow-up</div></div>
-    <div class="stat"><div class="n" style="color:var(--red)">${atRisk}</div><div class="l">At risk / delayed</div></div>`;
+    <div class="stat"><div class="n" style="color:var(--red)">${atRisk}</div><div class="l">At risk / delayed</div></div>
+    <div class="stat"><div class="n" style="color:var(--blue)">${opened}</div><div class="l">Opened</div></div>`;
 }
 
-// ---- Edit lock ----
-function setLockUI() {
-  document.getElementById('lockBtn').textContent = unlocked ? '🔓 Editing unlocked' : '🔒 Unlock editing';
-  document.getElementById('addBtn').disabled = !unlocked;
-}
-let pendingAction = null;
-function toggleLock() {
-  if (unlocked) { unlocked = false; sessionStorage.removeItem('editUnlocked'); setLockUI(); toast('Editing locked'); return; }
-  openPwModal(null);
-}
-function requireEdit(fn) {
-  if (unlocked) return fn();
-  openPwModal(fn);
-}
-function openPwModal(fn) {
-  pendingAction = fn;
-  document.getElementById('pwInput').value = '';
-  document.getElementById('pwErr').textContent = '';
-  document.getElementById('pwOverlay').classList.add('open');
-  setTimeout(() => document.getElementById('pwInput').focus(), 50);
-}
-function closePwModal() { document.getElementById('pwOverlay').classList.remove('open'); pendingAction = null; }
-async function submitPassword() {
-  const val = document.getElementById('pwInput').value;
-  const hash = await sha256(val);
-  if (hash === CONFIG.editPasswordHash) {
-    unlocked = true; sessionStorage.setItem('editUnlocked','1'); setLockUI();
-    const fn = pendingAction; closePwModal();
-    toast('Editing unlocked');
-    if (fn) fn();
-  } else {
-    document.getElementById('pwErr').textContent = 'Incorrect password. Try again.';
-    document.getElementById('pwInput').select();
-  }
+// Show/hide the "Opened workflow" fields depending on the chosen status.
+function toggleOpenedFields() {
+  const opened = document.getElementById('f-status').value === 'opened';
+  document.getElementById('openedFields').style.display = opened ? 'block' : 'none';
 }
 
+/* --- Add / Edit dialog -------------------------------------------------------
+   Opens the form. Pass an id to edit an existing client; pass nothing to add. */
 function openModal(id) {
   if (id) {
+    // EDIT: pre-fill the form with the chosen client's current values.
     const l = data.find(x => x.id === id);
     document.getElementById('modalTitle').textContent = 'Edit Client';
     document.getElementById('f-id').value = l.id;
@@ -391,10 +485,13 @@ function openModal(id) {
     document.getElementById('f-notes').value = l.notes || '';
     document.getElementById('f-pre').checked = !!l.preOpenDone;
     document.getElementById('f-post').checked = !!l.postOpenDone;
+    document.getElementById('f-opened-date').value = l.openedDate || '';
+    document.getElementById('f-open-outcome').value = l.openOutcome || '';
     document.getElementById('deleteBtn').style.display = 'block';
   } else {
+    // ADD: start with a blank form and sensible defaults.
     document.getElementById('modalTitle').textContent = 'Add Client';
-    ['f-id','f-client','f-name','f-tracker','f-notes'].forEach(i=>document.getElementById(i).value='');
+    ['f-id','f-client','f-name','f-tracker','f-notes','f-opened-date','f-open-outcome'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('f-date').value = '';
     document.getElementById('f-tier').value = 'Basic (+)';
     document.getElementById('f-status').value = 'on-track';
@@ -402,34 +499,50 @@ function openModal(id) {
     document.getElementById('f-post').checked = false;
     document.getElementById('deleteBtn').style.display = 'none';
   }
+  toggleOpenedFields();   // show the opened fields only if status is already "opened"
   document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
 
+// Validate the form and save it to the database (insert or update via upsert).
 async function saveLocation() {
   const id = document.getElementById('f-id').value;
   const name = document.getElementById('f-name').value.trim();
   const date = document.getElementById('f-date').value;
   if (!name || !date) { alert('Name and opening date are required.'); return; }
+  const status = document.getElementById('f-status').value;
+  const existing = id ? data.find(x => x.id === id) : null;   // for change detection
   const obj = {
-    id: id || 'loc-' + Date.now(),
+    id: id || 'loc-' + Date.now(),   // reuse id when editing; generate one when adding
     clientName: document.getElementById('f-client').value.trim(),
     name,
     tier: document.getElementById('f-tier').value,
     openingDate: date,
     tracker: document.getElementById('f-tracker').value.trim(),
-    status: document.getElementById('f-status').value,
+    status,
     notes: document.getElementById('f-notes').value.trim(),
     preOpenDone: document.getElementById('f-pre').checked,
-    postOpenDone: document.getElementById('f-post').checked
+    postOpenDone: document.getElementById('f-post').checked,
+    // Opened workflow: keep an actual open date (default to today) + outcome note.
+    openedDate: status === 'opened' ? (document.getElementById('f-opened-date').value || new Date().toISOString().slice(0,10)) : (document.getElementById('f-opened-date').value || null),
+    openOutcome: document.getElementById('f-open-outcome').value.trim() || null
   };
   document.getElementById('saveBtn').disabled = true;
   const { error } = await sb.from('locations').upsert(toDb(obj));
   document.getElementById('saveBtn').disabled = false;
   if (error) { alert('Save failed: ' + error.message); return; }
+
+  // Record the change in the activity log (newly opened gets its own action).
+  const label = `${obj.clientName || '—'} — ${obj.name}`;
+  if (!existing) logActivity('created', label, '');
+  else if (existing.status !== 'opened' && status === 'opened') logActivity('opened', label, obj.openOutcome ? 'Outcome: ' + obj.openOutcome : '');
+  else logActivity('updated', label, '');
+
   closeModal(); toast('Saved'); load();
 }
 
+// --- Delete (with confirmation dialog) ---------------------------------------
+// Step 1: open the confirm dialog showing which client will be removed.
 function deleteLocation() {
   const id = document.getElementById('f-id').value;
   if (!id) return;
@@ -439,22 +552,79 @@ function deleteLocation() {
   document.getElementById('confirmOverlay').classList.add('open');
 }
 function closeConfirm() { document.getElementById('confirmOverlay').classList.remove('open'); }
+// Step 2: user confirmed — actually delete the row from the database.
 async function confirmYes() {
   const id = document.getElementById('f-id').value;
+  const l = data.find(x => x.id === id);
   closeConfirm();
   const { error } = await sb.from('locations').delete().eq('id', id);
   if (error) { alert('Delete failed: ' + error.message); return; }
+  logActivity('deleted', l ? `${l.clientName || '—'} — ${l.name}` : 'entry', '');
   closeModal(); toast('Deleted'); load();
 }
 
+/* --- Activity log ------------------------------------------------------------
+   Every create/update/delete/opened writes one row here, tagged with the
+   logged-in user's email. The Activity Log tab reads them back.            */
+// Write a single log entry (best-effort: a logging failure never blocks the action).
+async function logActivity(action, entity, details) {
+  try {
+    await sb.from('activity_log').insert({
+      user_email: currentUser ? currentUser.email : 'unknown',
+      action, entity, details
+    });
+  } catch (e) { console.warn('activity log failed', e); }
+}
+// Load the most recent log entries and draw them in the Activity Log table.
+async function renderActivity() {
+  const { data: rows, error } = await sb.from('activity_log')
+    .select('*').order('created_at', { ascending: false }).limit(200);
+  const tbody = document.getElementById('activityRows');
+  if (error) { tbody.innerHTML = ''; document.getElementById('activityEmpty').textContent = 'Could not load activity: ' + error.message; document.getElementById('activityEmpty').style.display = 'block'; return; }
+  document.getElementById('activityEmpty').style.display = rows.length ? 'none' : 'block';
+  const ACTION_LABEL = { created:'Added', updated:'Edited', deleted:'Deleted', opened:'Marked opened' };
+  tbody.innerHTML = rows.map(r => {
+    const when = new Date(r.created_at).toLocaleString();
+    return `<tr>
+      <td><span style="white-space:nowrap">${esc(when)}</span></td>
+      <td>${esc(ACTION_LABEL[r.action] || r.action)}</td>
+      <td>${esc(r.entity || '')}${r.details ? `<div class="countdown">${esc(r.details)}</div>` : ''}</td>
+      <td>${esc(r.user_email || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* --- CSV export --------------------------------------------------------------
+   Downloads the rows currently shown (respects the tab + filters) as a CSV. */
+function exportCSV() {
+  const rows = getFilteredList();
+  const headers = ['Client','Location','Tier','Opening Date','Tracker','Status','Notes','Pre-open done','Post-open done','Actual open date','Open outcome'];
+  const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;   // quote + escape for CSV
+  const lines = [headers.join(',')];
+  rows.forEach(l => lines.push([
+    l.clientName, l.name, l.tier, l.openingDate, l.tracker, STATUS_LABELS[l.status] || l.status,
+    l.notes, l.preOpenDone ? 'Yes' : 'No', l.postOpenDone ? 'Yes' : 'No', l.openedDate, l.openOutcome
+  ].map(cell).join(',')));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `client-openings-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// --- Misc + startup ----------------------------------------------------------
+// Brief pop-up confirmation message at the bottom of the screen.
 let toastT;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2000); }
 
+// Close each dialog when its dark backdrop (not the dialog itself) is clicked.
 document.getElementById('overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
-document.getElementById('pwOverlay').addEventListener('click', e => { if (e.target.id === 'pwOverlay') closePwModal(); });
 document.getElementById('confirmOverlay').addEventListener('click', e => { if (e.target.id === 'confirmOverlay') closeConfirm(); });
-setLockUI();
-load();
+
+// Startup: react to the current session, then to any login/logout afterwards.
+sb.auth.getSession().then(({ data }) => handleAuth(data.session));
+sb.auth.onAuthStateChange((_event, session) => handleAuth(session));
 </script>
 </body>
 </html>

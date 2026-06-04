@@ -22,3 +22,10 @@ create policy "team write" on locations for all    using (true) with check (true
 -- Note: client_name was added after the initial table. If you ever rebuild and
 -- the column is missing, run:
 --   alter table locations add column client_name text;
+
+-- tier (PodPlay Tier: "Basic (+)" or "Pro/Auto (+)") was added later. If missing, run:
+--   alter table locations add column tier text;
+
+-- 3. Enable real-time updates so changes appear on everyone's screen instantly
+--    (without this, the site falls back to auto-refreshing every 20 seconds).
+alter publication supabase_realtime add table locations;
