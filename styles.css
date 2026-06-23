@@ -1,0 +1,152 @@
+/* ============================================================================
+   CLIENT OPENING TRACKER  —  STYLES (all the visual design lives in this file)
+
+   *** TO CHANGE COLORS: edit the values in the ":root" block right below. ***
+   Each line looks like   --name: #RRGGBB;   where #RRGGBB is a hex color.
+   Grab a hex code from any color picker (e.g. https://htmlcolorpicker.com),
+   paste it in, save, then re-upload this file to GitHub. The whole app
+   re-themes itself automatically — you never have to hunt through the rest.
+
+   The rest of the file (below :root) is grouped by area:
+   header -> stat cards -> tabs -> filters -> table -> badges -> dialogs ->
+   login screen -> toast. You can ignore it unless you want to change layout.
+   ============================================================================ */
+
+:root {
+  /* ---- Backgrounds & surfaces (dark to light) ---- */
+  --bg:      #0a0e1a;  /* the page background (darkest) */
+  --panel:   #131a29;  /* cards, the table, dialog boxes */
+  --panel-2: #1c2435;  /* buttons, input boxes, row hover (a bit lighter) */
+  --border:  #2a3447;  /* thin divider lines + card outlines */
+
+  /* ---- Text ---- */
+  --text:    #e2e8f0;  /* main text color */
+  --muted:   #8b97ac;  /* secondary / greyed-out text */
+
+  /* ---- Brand accent (primary buttons, active tab) ---- */
+  --accent:   #6366f1; /* main purple */
+  --accent-h: #818cf8; /* lighter purple, used on hover */
+
+  /* ---- Status colors ---- */
+  --green: #22c55e;    /* on track / "live" dot */
+  --amber: #f59e0b;    /* at risk / needs follow-up */
+  --red:   #ef4444;    /* delayed / overdue / delete */
+  --blue:  #38bdf8;    /* opened */
+}
+
+  — all the visual styling (colors, table, dialogs, tabs)
+    2. <body>   — the page structure: header, stats, tabs, filters, table, dialogs
+    3. <script> — the logic: load data, render the table, add/edit/delete, password lock
+  The JavaScript section is commented function-by-function. Database setup
+  (table columns, security, realtime) lives in docs/database-setup.sql.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Client Opening Tracker</title>
+<link rel="icon" href="assets/favicon.ico" />
+<style>
+  
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { padding: 16px 32px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  header h1 { font-size: 22px; margin: 0; font-weight: 650; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 9px 16px; border-radius: 8px; transition: .15s; }
+  button:hover { border-color: var(--accent-h); }
+  button.primary { background: var(--accent); border-color: var(--accent); }
+  button.primary:hover { background: var(--accent-h); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  main { padding: 16px 32px 24px; max-width: 1200px; margin: 0 auto; }
+  .status-line { font-size: 12px; color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; }
+  .stat .n { font-size: 22px; font-weight: 700; }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 16px; color: var(--muted); font-size: 14px; }
+  .tab:hover { color: var(--text); border-color: transparent; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab .pill { display: inline-block; margin-left: 7px; background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+  /* Activity Log tab: lighter pill style, set apart from the queue tabs */
+  #tab-activity { border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); padding: 6px 14px; margin-bottom: 4px; }
+  #tab-activity:hover { border-color: var(--accent-h); }
+  #tab-activity.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .filters input, .filters select { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; overflow-wrap: anywhere; }
+  col.c-client { width: 11%; } col.c-loc { width: 28%; } col.c-tier { width: 9%; }
+  col.c-open { width: 10%; } col.c-tracker { width: 11%; } col.c-status { width: 9%; }
+  col.c-follow { width: 12%; } col.c-act { width: 10%; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--panel-2); }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .b-on-track { background: rgba(34,197,94,.15); color: var(--green); }
+  .b-at-risk { background: rgba(245,158,11,.15); color: var(--amber); }
+  .b-delayed { background: rgba(239,68,68,.15); color: var(--red); }
+  .b-opened { background: rgba(56,189,248,.15); color: var(--blue); }
+  .flag { font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px; }
+  .flag-pre { background: rgba(245,158,11,.18); color: var(--amber); }
+  .flag-post { background: rgba(56,189,248,.18); color: var(--blue); }
+  .countdown { color: var(--muted); font-size: 12px; }
+  .row-actions button { padding: 5px 10px; font-size: 12px; }
+  .checks { display: flex; flex-direction: column; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .check input[type=checkbox] { width: 17px; height: 17px; margin: 0; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 460px; padding: 24px; max-height: 92vh; overflow-y: auto; }
+  .modal.wide { max-width: 760px; }
+  .modal h2 { margin: 0 0 18px; font-size: 18px; }
+  /* Two-column form layout for the Add/Edit dialog */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  .form-grid .span2 { grid-column: 1 / -1; }
+  .openedfields-wrap { display: contents; }   /* lets its children join the grid */
+  @media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field select, .field textarea { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
+  .field textarea { resize: vertical; min-height: 60px; }
+  .modal-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px; }
+  .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .pager .info { font-size: 12px; color: var(--muted); }
+  .pager .pages { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pager .pages button { padding: 6px 12px; font-size: 13px; min-width: 38px; }
+  .pager .pages button.active { background: var(--accent); border-color: var(--accent); }
+  .modal.sm { max-width: 380px; text-align: center; }
+  .modal.sm .icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; font-size: 24px; }
+  .modal.sm .icon.lock { background: rgba(99,102,241,.15); }
+  .modal.sm .icon.warn { background: rgba(239,68,68,.15); }
+  .modal.sm h2 { margin: 0 0 6px; }
+  .modal.sm p { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  .modal.sm input { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; text-align: center; margin-bottom: 6px; }
+  .modal.sm .err { color: var(--red); font-size: 12px; min-height: 16px; margin-bottom: 10px; }
+  .modal.sm .btns { display: flex; gap: 10px; }
+  .modal.sm .btns button { flex: 1; padding: 11px; }
+  .danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .danger:hover { background: #dc2626; border-color: #dc2626; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--border); padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; }
+  /* Login screen */
+  .login-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--bg); z-index: 200; }
+  .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 360px; text-align: center; }
+  .login-logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px; }
+  .login-card h1 { font-size: 20px; margin: 0 0 4px; }
+  .login-card p { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .login-card input { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin-bottom: 10px; }
+  .login-card .err { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+  .login-card .primary { width: 100%; padding: 12px; }
+  .login-card .login-hint { font-size: 12px; margin: 16px 0 0; }
+  /* Signed-in user box in the header */
+  .userbox { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+
+  /* Per-row 🔔 reminder button (sits next to Edit) */
+  .row-actions .bell { padding: 5px 9px; }
+  .row-actions .bell:hover { border-color: var(--accent-h); }
