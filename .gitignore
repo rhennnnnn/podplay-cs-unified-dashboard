@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# session md files (local-only)
+PROMPTS.md
+CONTEXT.md
+INSTRUCTIONS.md
+DOCUMENTATION.md
+HANDOFF.md
