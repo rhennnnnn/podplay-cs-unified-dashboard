@@ -467,6 +467,7 @@ export function getFormSubmissionUrl(portalId: string, formId: string, submissio
 // what keeps normal usage well under HubSpot's rate limit.
 interface CacheEntry<T> {
   expires: number;
+  fetchedAt: number;
   value?: T;
   promise?: Promise<T>;
 }
@@ -480,9 +481,10 @@ export async function withCache<T>(key: string, ttlMs: number, fn: () => Promise
     if (entry.value !== undefined) return entry.value;
   }
 
+  const fetchedAt = Date.now();
   const promise = fn()
     .then((value) => {
-      cacheStore.set(key, { expires: Date.now() + ttlMs, value });
+      cacheStore.set(key, { expires: Date.now() + ttlMs, fetchedAt, value });
       return value;
     })
     .catch((err) => {
@@ -490,8 +492,15 @@ export async function withCache<T>(key: string, ttlMs: number, fn: () => Promise
       throw err;
     });
 
-  cacheStore.set(key, { expires: now + ttlMs, promise });
+  cacheStore.set(key, { expires: now + ttlMs, fetchedAt, promise });
   return promise;
+}
+
+// The timestamp of the data currently served for `key` — same value for every
+// caller sharing the cache entry, so "Updated X ago" reads identically for
+// every CSA instead of drifting per browser tab's own fetch time.
+export function getCacheTimestamp(key: string): number | null {
+  return cacheStore.get(key)?.fetchedAt ?? null;
 }
 
 // Server-only fetch wrapper — never import this from a client component.

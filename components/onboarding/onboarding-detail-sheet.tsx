@@ -156,9 +156,34 @@ export function OnboardingDetailSheet({
               </div>
             </div>
 
+            {/* Section 2 — Track Client's Opening (kept near the top — it's the
+                one write action on this otherwise read-only sheet) */}
+            <div className="rounded-xl bg-accent/10 p-4">
+              <p className="font-medium">Track This Client&apos;s Opening</p>
+              <p className="text-sm text-muted-foreground">Add this onboarding to the Client Opening Tracker.</p>
+              {isTracked ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <Badge>Already tracked</Badge>
+                  {trackedLocationId && (
+                    <a href="/dashboard/clients" className="text-sm text-primary hover:underline">
+                      View in tracker
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  className="mt-3 w-full"
+                  onClick={() => listItem && onTrackOpening(listItem)}
+                  disabled={!listItem}
+                >
+                  Create Tracker Entry
+                </Button>
+              )}
+            </div>
+
             <Separator className="bg-sidebar-border" />
 
-            {/* Section 2 — Contact & Company */}
+            {/* Section 3 — Contact & Company */}
             <div className="space-y-3">
               <p className="text-sm font-medium">Contact & Company</p>
               {contact ? (
@@ -227,7 +252,7 @@ export function OnboardingDetailSheet({
 
             <Separator className="bg-sidebar-border" />
 
-            {/* Section 3 — Deal Details */}
+            {/* Section 4 — Deal Details */}
             <div className="space-y-3">
               <p className="text-sm font-medium">Onboarding Details</p>
               <div className="grid grid-cols-2 gap-4">
@@ -344,7 +369,7 @@ export function OnboardingDetailSheet({
 
             <Separator className="bg-sidebar-border" />
 
-            {/* Section 4 — Recent Activity */}
+            {/* Section 5 — Recent Activity */}
             <div>
               <p className="mb-2 text-sm font-medium">Recent Activity</p>
               {!activityData ? (
@@ -373,32 +398,6 @@ export function OnboardingDetailSheet({
                     );
                   })}
                 </ul>
-              )}
-            </div>
-
-            <Separator className="bg-sidebar-border" />
-
-            {/* Section 5 — Track Client's Opening */}
-            <div className="rounded-xl bg-accent/10 p-4">
-              <p className="font-medium">Track This Client&apos;s Opening</p>
-              <p className="text-sm text-muted-foreground">Add this onboarding to the Client Opening Tracker.</p>
-              {isTracked ? (
-                <div className="mt-3 flex items-center gap-2">
-                  <Badge>Already tracked</Badge>
-                  {trackedLocationId && (
-                    <a href="/dashboard/clients" className="text-sm text-primary hover:underline">
-                      View in tracker
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <Button
-                  className="mt-3 w-full"
-                  onClick={() => listItem && onTrackOpening(listItem)}
-                  disabled={!listItem}
-                >
-                  Create Tracker Entry
-                </Button>
               )}
             </div>
           </div>

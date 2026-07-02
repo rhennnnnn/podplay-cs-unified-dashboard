@@ -24,9 +24,11 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
 
 // Auto-refresh every 30 minutes — HubSpot data here doesn't change fast enough
 // to warrant tighter polling, and the manual refresh button covers "I need
-// this now." The API routes also cache each query server-side (see
-// lib/hubspot.ts withCache) so this and focus-revalidation hit that cache —
-// not HubSpot directly — when more than one CSA is on the same pipeline/filter.
+// this now." Focus/reconnect revalidation is intentionally OFF: tabbing in
+// and out (or a brief network drop on wake) would otherwise trigger a fetch
+// on every switch, and once the server cache TTL lapses that fetch hits
+// HubSpot directly — the 30-minute interval + manual refresh below are the
+// only ways this ever re-fetches.
 const REFRESH_INTERVAL = 30 * 60_000;
 const COOLDOWN_SECONDS = 60;
 
@@ -54,7 +56,6 @@ export function OnboardingGrid({
   const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
   const [trackDeal, setTrackDeal] = React.useState<OnboardingListItem | null>(null);
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
-  const [lastRefreshed, setLastRefreshed] = React.useState<Date | null>(null);
   const [cooldown, setCooldown] = React.useState(0);
   const [, forceTick] = React.useState(0);
 
@@ -85,11 +86,10 @@ export function OnboardingGrid({
 
   const { data, error, isLoading, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
     refreshInterval: REFRESH_INTERVAL,
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 15_000,
     keepPreviousData: true,
-    onSuccess: () => setLastRefreshed(new Date()),
   });
 
   const { data: ownersData } = useSWR<OwnersResponse>("/api/hubspot/owners", fetcher, {
@@ -151,7 +151,7 @@ export function OnboardingGrid({
           </div>
           <div className="flex items-center gap-2">
             <span className="whitespace-nowrap text-xs text-muted-foreground">
-              {lastRefreshed ? `Updated ${formatRelativeTime(lastRefreshed.toISOString())}` : "Loading…"}
+              {data?.fetchedAt ? `Updated ${formatRelativeTime(new Date(data.fetchedAt).toISOString())}` : "Loading…"}
             </span>
             <Button size="sm" variant="outline" disabled={cooldown > 0} onClick={handleManualRefresh} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
