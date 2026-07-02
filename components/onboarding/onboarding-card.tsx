@@ -1,18 +1,32 @@
 "use client";
 
-import { CheckCircle2, ExternalLink } from "lucide-react";
+import { CheckCircle2, ExternalLink, Mail } from "lucide-react";
 
-import { formatDateWithRelative, TIER_LABEL, type HubspotOwner } from "@/lib/hubspot";
+import {
+  EMAIL_DIRECTION_LABEL,
+  formatDateWithRelative,
+  formatRelativeTime,
+  getLastEmailUrgency,
+  TIER_LABEL,
+  type HubspotOwner,
+} from "@/lib/hubspot";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 const PORTAL_ID = "44006894";
 
+const URGENCY_BORDER: Record<string, string> = {
+  warning: "border-amber-500/60",
+  critical: "border-destructive/70",
+};
+
 interface OnboardingCardProps {
   deal: OnboardingListItem;
   owner: HubspotOwner | undefined;
   isTracked: boolean;
+  stageIsClosed: boolean;
   onOpen: () => void;
 }
 
@@ -20,9 +34,10 @@ interface OnboardingCardProps {
 // Sheet, where the full properties and the Track Opening action live. Keeping
 // this face minimal (no action buttons, no per-card HubSpot activity fetch)
 // is what makes a full board of ~90 cards render without hammering rate limits.
-export function OnboardingCard({ deal, owner, isTracked, onOpen }: OnboardingCardProps) {
+export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }: OnboardingCardProps) {
   const { properties } = deal;
   const closeDate = formatDateWithRelative(properties.grand_opening ?? properties.anticipated_opening);
+  const urgency = getLastEmailUrgency(deal.lastEmail, stageIsClosed);
 
   return (
     <Card
@@ -30,7 +45,10 @@ export function OnboardingCard({ deal, owner, isTracked, onOpen }: OnboardingCar
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen()}
-      className="flex cursor-pointer flex-col gap-2 p-3 transition-colors hover:border-accent/50"
+      className={cn(
+        "flex cursor-pointer flex-col gap-2 p-3 transition-colors hover:border-accent/50",
+        URGENCY_BORDER[urgency]
+      )}
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="line-clamp-2 text-sm font-semibold leading-snug" title={properties.hs_name ?? ""}>
@@ -79,6 +97,22 @@ export function OnboardingCard({ deal, owner, isTracked, onOpen }: OnboardingCar
           </span>
         )}
       </div>
+
+      {deal.lastEmail && (
+        <a
+          href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${deal.id}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "flex items-center gap-1.5 text-[11px] hover:underline",
+            urgency === "critical" ? "text-destructive" : urgency === "warning" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+          )}
+        >
+          <Mail className="h-3 w-3 shrink-0" />
+          {EMAIL_DIRECTION_LABEL[deal.lastEmail.direction] ?? "Email"} · {formatRelativeTime(deal.lastEmail.timestamp)}
+        </a>
+      )}
     </Card>
   );
 }

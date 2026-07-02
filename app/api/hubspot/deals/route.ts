@@ -5,7 +5,9 @@ import {
   PIPELINE_MAP,
   batchReadAssociations,
   batchReadObjects,
+  getLastEmail,
   hubspotFetch,
+  mapLimit,
   withCache,
   type PipelineKey,
 } from "@/lib/hubspot";
@@ -70,12 +72,13 @@ export async function GET(req: NextRequest) {
 
   // Cache key covers every filter combo — identical requests from other CSAs
   // viewing the same pipeline/owner/search within the TTL hit this instead of
-  // HubSpot. TTL sits just under the manual-refresh cooldown so a deliberate
-  // refresh almost always gets a real, fresh pull.
+  // HubSpot. TTL is generous (5 min) because this now also does a per-card
+  // last-email lookup below — a moderately expensive step that only needs to
+  // run once per window, shared across every CSA, not on every poll.
   const cacheKey = `deals:${params.toString()}`;
 
   try {
-    const result = await withCache(cacheKey, 45_000, async () => {
+    const result = await withCache(cacheKey, 5 * 60_000, async () => {
       const data = await hubspotFetch<SearchResponse>(`/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -99,7 +102,13 @@ export async function GET(req: NextRequest) {
         batchReadObjects<{ name: string | null; domain: string | null }>("companies", companyIds, ["name", "domain"]),
       ]);
 
-      const deals = data.results.map((r) => {
+      // This whole block only runs once per 5-minute cache window (shared by
+      // every CSA), not per request, so a wider concurrency here is safe — it
+      // cuts a ~15s cold load down to a few seconds without reintroducing the
+      // per-request burst that caused the original rate-limit problem.
+      const lastEmails = await mapLimit(data.results, 20, (r) => getLastEmail(r.id));
+
+      const deals = data.results.map((r, i) => {
         const contactId = contactAssoc[r.id]?.[0];
         const companyId = companyAssoc[r.id]?.[0];
         const contact = contactId ? contacts[contactId] : undefined;
@@ -116,6 +125,7 @@ export async function GET(req: NextRequest) {
               }
             : null,
           company: company ? { id: companyId!, name: company.properties.name, domain: company.properties.domain } : null,
+          lastEmail: lastEmails[i],
         };
       });
 

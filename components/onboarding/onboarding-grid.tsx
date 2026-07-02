@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { RefreshCw, Search } from "lucide-react";
+import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { formatRelativeTime, PIPELINE_MAP, type HubspotOwner } from "@/lib/hubspot";
 import { Badge } from "@/components/ui/badge";
@@ -22,17 +22,16 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
   return json;
 });
 
-// HubSpot's private-app rate limit is shared across every user viewing this page.
-// The API routes cache each query for 45s server-side (see lib/hubspot.ts
-// withCache), so polling and focus-revalidation here hit that cache — not
-// HubSpot directly — in the common case where more than one CSA is looking at
-// the same pipeline/filter within the same window. That's what makes it safe
-// to poll fairly often and revalidate on focus without risking a repeat of the
-// rate-limit bursts from before.
-const REFRESH_INTERVAL = 60_000;
+// Auto-refresh every 30 minutes — HubSpot data here doesn't change fast enough
+// to warrant tighter polling, and the manual refresh button covers "I need
+// this now." The API routes also cache each query server-side (see
+// lib/hubspot.ts withCache) so this and focus-revalidation hit that cache —
+// not HubSpot directly — when more than one CSA is on the same pipeline/filter.
+const REFRESH_INTERVAL = 30 * 60_000;
 const COOLDOWN_SECONDS = 60;
 
 type PipelineKey = "basic" | "pro";
+type SortMode = "recent" | "alpha" | "date";
 
 interface OnboardingGridProps {
   userEmail: string;
@@ -49,6 +48,7 @@ export function OnboardingGrid({
 }: OnboardingGridProps) {
   const [pipeline, setPipeline] = React.useState<PipelineKey>("basic");
   const [owner, setOwner] = React.useState<string>("all");
+  const [sortMode, setSortMode] = React.useState<SortMode>("recent");
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
@@ -56,6 +56,14 @@ export function OnboardingGrid({
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
   const [lastRefreshed, setLastRefreshed] = React.useState<Date | null>(null);
   const [cooldown, setCooldown] = React.useState(0);
+  const [, forceTick] = React.useState(0);
+
+  // "Updated Xs ago" would otherwise freeze until the next poll/re-render —
+  // tick every second purely to recompute that label live.
+  React.useEffect(() => {
+    const t = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   React.useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);
@@ -94,7 +102,24 @@ export function OnboardingGrid({
     return map;
   }, [ownersData]);
 
-  const deals = React.useMemo(() => data?.deals ?? [], [data]);
+  const deals = React.useMemo(() => {
+    const list = data?.deals ?? [];
+    const sorted = [...list];
+    if (sortMode === "alpha") {
+      sorted.sort((a, b) => (a.properties.hs_name ?? "").localeCompare(b.properties.hs_name ?? ""));
+    } else if (sortMode === "date") {
+      sorted.sort((a, b) => {
+        const da = a.properties.grand_opening ?? a.properties.anticipated_opening;
+        const db = b.properties.grand_opening ?? b.properties.anticipated_opening;
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return new Date(da).getTime() - new Date(db).getTime();
+      });
+    }
+    // "recent" keeps the API's own hs_lastmodifieddate-desc order.
+    return sorted;
+  }, [data, sortMode]);
   const pipelineDef = PIPELINE_MAP[pipeline];
 
   const columns = React.useMemo(() => {
@@ -132,6 +157,11 @@ export function OnboardingGrid({
               <RefreshCw className="h-3.5 w-3.5" />
               {cooldown > 0 ? `Refresh (${cooldown}s)` : "Refresh"}
             </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" asChild>
+              <a href="https://app.hubspot.com/contacts/44006894/objects/0-162" target="_blank" rel="noreferrer">
+                Open in HubSpot <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
           </div>
         </div>
 
@@ -164,6 +194,16 @@ export function OnboardingGrid({
                     {o.firstName} {o.lastName}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently Updated</SelectItem>
+                <SelectItem value="alpha">Alphabetical (A–Z)</SelectItem>
+                <SelectItem value="date">Opening Date</SelectItem>
               </SelectContent>
             </Select>
             {data && <Badge variant="secondary">{deals.length} total</Badge>}
@@ -230,6 +270,7 @@ export function OnboardingGrid({
                       deal={deal}
                       owner={deal.properties.hubspot_owner_id ? ownerMap.get(deal.properties.hubspot_owner_id) : undefined}
                       isTracked={trackedIds.has(deal.id)}
+                      stageIsClosed={stage.isClosed}
                       onOpen={() => setSelectedDealId(deal.id)}
                     />
                   ))
