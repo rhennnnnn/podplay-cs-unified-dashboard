@@ -60,6 +60,19 @@ export function formatDate(dateStr: string | null): string {
   });
 }
 
+export function formatRelativeDays(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  const target = new Date(dateStr);
+  const today = new Date();
+  target.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+
+  if (diffDays === 0) return "today";
+  if (diffDays > 0) return `in ${diffDays}d`;
+  return `${Math.abs(diffDays)}d ago`;
+}
+
 export function nameFromEmail(email: string): string {
   const localPart = email.split("@")[0] ?? email;
   const first = localPart.split(".")[0] ?? localPart;
@@ -76,4 +89,23 @@ export function parseTracker(tracker: string | null): string[] {
 
 export function joinTracker(names: string[]): string | null {
   return names.length > 0 ? names.join(" | ") : null;
+}
+
+// Opens a location's readiness checklist in a new tab/window, creating the
+// underlying `readiness` row first if one doesn't exist yet.
+export async function openReadinessChecklist(locationId: string): Promise<void> {
+  const tab = window.open("", "_blank");
+  try {
+    const res = await fetch("/api/readiness/ensure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location_id: locationId }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to open readiness checklist.");
+    if (tab) tab.location.href = `/readiness/${json.token}`;
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
 }

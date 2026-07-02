@@ -5,7 +5,7 @@ import { AlertTriangle, Check, ExternalLink, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
-import { formatDate, isFollowUpOverdue } from "@/lib/client-hub";
+import { formatDate, isFollowUpOverdue, openReadinessChecklist } from "@/lib/client-hub";
 import type { ActivityLogEntry, Location, Readiness } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -115,22 +115,13 @@ export function ClientDetailSheet({
     }
   }
 
-  async function openReadinessChecklist() {
+  async function handleOpenReadiness() {
     if (!location) return;
     setOpeningReadiness(true);
-    const tab = window.open("", "_blank");
     try {
-      const res = await fetch("/api/readiness/ensure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ location_id: location.id }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to open readiness checklist.");
-      if (tab) tab.location.href = `/readiness/${json.token}`;
+      await openReadinessChecklist(location.id);
       onChanged();
     } catch (err) {
-      tab?.close();
       toast.error(err instanceof Error ? err.message : "Failed to open readiness checklist.");
     } finally {
       setOpeningReadiness(false);
@@ -221,7 +212,7 @@ export function ClientDetailSheet({
               size="sm"
               variant="secondary"
               disabled={openingReadiness}
-              onClick={openReadinessChecklist}
+              onClick={handleOpenReadiness}
               className="mt-2 gap-1.5"
             >
               <ExternalLink className="h-3.5 w-3.5" />

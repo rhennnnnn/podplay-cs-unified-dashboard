@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 
 const STATUS_OPTIONS: LocationStatus[] = ["on-track", "at-risk", "delayed", "opened"];
+const TIER_OPTIONS = ["Basic (+)", "Pro/Auto (+)"];
 
 interface FormState {
   id: string;
@@ -195,7 +196,18 @@ export function ClientFormDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="tier">Tier</Label>
-              <Input id="tier" value={form.tier} onChange={(e) => update("tier", e.target.value)} />
+              <Select value={form.tier} onValueChange={(v) => update("tier", v)}>
+                <SelectTrigger id="tier">
+                  <SelectValue placeholder="Select tier..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIER_OPTIONS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="opening_date">Opening Date</Label>
