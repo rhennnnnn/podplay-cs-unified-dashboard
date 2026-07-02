@@ -438,11 +438,16 @@ interface LegacyContactProfile {
 // properties only expose the single MOST RECENT conversion, not the full list.
 // `conversion-id` doubles as the submission ID HubSpot's UI uses in its
 // per-submission deep link — confirmed by matching a real submission URL.
+// "Contact Support Form" is a general support-request form, not an
+// onboarding form — excluded so this list only shows onboarding-relevant
+// submissions.
+const EXCLUDED_FORM_TITLES = new Set(["Contact Support Form"]);
+
 export async function getContactFormSubmissions(contactId: string): Promise<ContactFormSubmission[]> {
   try {
     const profile = await hubspotFetch<LegacyContactProfile>(`/contacts/v1/contact/vid/${contactId}/profile`);
     return (profile["form-submissions"] ?? [])
-      .filter((s) => s["form-type"] === "HUBSPOT" && s.title)
+      .filter((s) => s["form-type"] === "HUBSPOT" && s.title && !EXCLUDED_FORM_TITLES.has(s.title))
       .map((s) => ({ title: s.title!, timestamp: s.timestamp, formId: s["form-id"], submissionId: s["conversion-id"] }))
       .sort((a, b) => b.timestamp - a.timestamp);
   } catch {
