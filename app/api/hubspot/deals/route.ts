@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     filterGroups: filters.length > 0 ? [{ filters }] : [],
     sorts: [{ propertyName: "hs_lastmodifieddate", direction: "DESCENDING" }],
     properties: LIST_PROPERTIES,
-    limit: 50,
+    limit: 100,
   };
   if (search) body.query = search;
   if (after) body.after = after;

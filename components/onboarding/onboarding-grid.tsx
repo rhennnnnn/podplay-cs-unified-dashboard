@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 
-import { formatRelativeTime, PIPELINE_MAP, type ActivityItem, type HubspotOwner } from "@/lib/hubspot";
+import { formatRelativeTime, PIPELINE_MAP, type HubspotOwner } from "@/lib/hubspot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +22,13 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
   return json;
 });
 
-const REFRESH_INTERVAL = 30_000;
+// HubSpot's private-app rate limit is shared across every user viewing this page —
+// keep auto-refresh conservative and never refire just because the browser tab
+// regained focus (that's what was causing bursts and occasional "Failed to load").
+const REFRESH_INTERVAL = 90_000;
 const COOLDOWN_SECONDS = 60;
+
+type PipelineKey = "basic" | "pro";
 
 interface OnboardingGridProps {
   userEmail: string;
@@ -38,8 +43,7 @@ export function OnboardingGrid({
   trackerRoster,
   trackedDealIds: initialTracked,
 }: OnboardingGridProps) {
-  const [pipeline, setPipeline] = React.useState<"all" | "basic" | "pro">("all");
-  const [stage, setStage] = React.useState<string>("all");
+  const [pipeline, setPipeline] = React.useState<PipelineKey>("basic");
   const [owner, setOwner] = React.useState<string>("all");
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
@@ -62,16 +66,17 @@ export function OnboardingGrid({
 
   const dealsKey = React.useMemo(() => {
     const params = new URLSearchParams({ pipeline });
-    if (stage !== "all") params.set("stage", stage);
     if (owner !== "all") params.set("owner", owner);
     if (search) params.set("search", search);
     return `/api/hubspot/deals?${params.toString()}`;
-  }, [pipeline, stage, owner, search]);
+  }, [pipeline, owner, search]);
 
   const { data, error, isLoading, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
     refreshInterval: REFRESH_INTERVAL,
-    revalidateOnFocus: true,
-    dedupingInterval: 10_000,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30_000,
+    keepPreviousData: true,
     onSuccess: () => setLastRefreshed(new Date()),
   });
 
@@ -85,34 +90,14 @@ export function OnboardingGrid({
   }, [ownersData]);
 
   const deals = React.useMemo(() => data?.deals ?? [], [data]);
-  const { data: activityMap } = useSWR(
-    deals.length > 0 ? ["activity-batch", ...deals.map((d) => d.id)] : null,
-    async () => {
-      // Each activity fetch fans out to several HubSpot associations/batch-read calls —
-      // firing one per card at once (up to 50) blows through HubSpot's rate limit and
-      // comes back as 502s. Cap concurrency so a full grid page stays well under it.
-      const CONCURRENCY = 5;
-      const entries: (readonly [string, ActivityItem[]])[] = [];
-      for (let i = 0; i < deals.length; i += CONCURRENCY) {
-        const batch = deals.slice(i, i + CONCURRENCY);
-        const results = await Promise.all(
-          batch.map(async (d) => {
-            try {
-              const res = await fetch(`/api/hubspot/activity/${d.id}`);
-              const json = await res.json();
-              return [d.id, (json.activity as ActivityItem[]) ?? []] as const;
-            } catch {
-              return [d.id, [] as ActivityItem[]] as const;
-            }
-          })
-        );
-        entries.push(...results);
-      }
-      return new Map(entries);
-    }
-  );
+  const pipelineDef = PIPELINE_MAP[pipeline];
 
-  const availableStages = pipeline === "all" ? [] : PIPELINE_MAP[pipeline].stages;
+  const columns = React.useMemo(() => {
+    return pipelineDef.stages.map((stage) => ({
+      stage,
+      deals: deals.filter((d) => d.properties.hs_pipeline_stage === stage.id),
+    }));
+  }, [pipelineDef, deals]);
 
   async function handleManualRefresh() {
     if (cooldown > 0) return;
@@ -124,19 +109,19 @@ export function OnboardingGrid({
     setTrackedIds((prev) => new Set(prev).add(dealId));
   }
 
+  const hasAnyFilter = owner !== "all" || search.length > 0;
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4">
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">HubSpot Onboarding</h1>
-            <p className="text-sm text-muted-foreground">
-              Live view of every onboarding across Basic(+) and Pro/Auto(+) — read-only from HubSpot.
-            </p>
+            <p className="text-sm text-muted-foreground">Read-only board synced from HubSpot.</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {lastRefreshed ? `Last updated ${formatRelativeTime(lastRefreshed.toISOString())}` : "Loading…"}
+            <span className="whitespace-nowrap text-xs text-muted-foreground">
+              {lastRefreshed ? `Updated ${formatRelativeTime(lastRefreshed.toISOString())}` : "Loading…"}
             </span>
             <Button size="sm" variant="outline" disabled={cooldown > 0} onClick={handleManualRefresh} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
@@ -145,56 +130,43 @@ export function OnboardingGrid({
           </div>
         </div>
 
-        <Tabs value={pipeline} onValueChange={(v) => { setPipeline(v as typeof pipeline); setStage("all"); }}>
-          <TabsList>
-            <TabsTrigger value="all">All Pipelines</TabsTrigger>
-            <TabsTrigger value="basic">Basic (+)</TabsTrigger>
-            <TabsTrigger value="pro">Pro/Auto (+)</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Tabs value={pipeline} onValueChange={(v) => setPipeline(v as PipelineKey)}>
+            <TabsList>
+              <TabsTrigger value="basic">Basic (+)</TabsTrigger>
+              <TabsTrigger value="pro">Pro/Auto (+)</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search deal or contact name…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="pl-8"
-            />
+          <div className="flex flex-1 items-center justify-end gap-2">
+            <div className="relative w-full max-w-[240px]">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search deal or contact…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <Select value={owner} onValueChange={setOwner}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="All Owners" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Owners</SelectItem>
+                {(ownersData?.owners ?? []).map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.firstName} {o.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {data && <Badge variant="secondary">{deals.length} total</Badge>}
           </div>
-          <Select value={stage} onValueChange={setStage} disabled={pipeline === "all"}>
-            <SelectTrigger className="w-[180px]">
-              <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
-              <SelectValue placeholder="All Stages" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stages</SelectItem>
-              {availableStages.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={owner} onValueChange={setOwner}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All Owners" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Owners</SelectItem>
-              {(ownersData?.owners ?? []).map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  {o.firstName} {o.lastName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {data && <Badge variant="secondary">{data.total} total</Badge>}
         </div>
       </div>
 
-      {error && (
+      {error && !data && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load — try refreshing.
           <Button size="sm" variant="outline" className="ml-3" onClick={() => mutate()}>
@@ -204,9 +176,9 @@ export function OnboardingGrid({
       )}
 
       {isLoading && !data && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex gap-4 overflow-x-auto pb-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-56 w-full rounded-xl" />
+            <Skeleton key={i} className="h-[60vh] w-72 shrink-0 rounded-xl" />
           ))}
         </div>
       )}
@@ -215,34 +187,50 @@ export function OnboardingGrid({
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
           <p className="font-medium">No onboardings match your filters</p>
           <p className="text-sm text-muted-foreground">Try clearing filters or search.</p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2"
-            onClick={() => {
-              setPipeline("all");
-              setStage("all");
-              setOwner("all");
-              setSearchInput("");
-            }}
-          >
-            Clear filters
-          </Button>
+          {hasAnyFilter && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() => {
+                setOwner("all");
+                setSearchInput("");
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
         </div>
       )}
 
       {deals.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {deals.map((deal) => (
-            <OnboardingCard
-              key={deal.id}
-              deal={deal}
-              owner={deal.properties.hubspot_owner_id ? ownerMap.get(deal.properties.hubspot_owner_id) : undefined}
-              lastActivity={activityMap?.get(deal.id)}
-              isTracked={trackedIds.has(deal.id)}
-              onOpen={() => setSelectedDealId(deal.id)}
-              onTrackOpening={() => setTrackDeal(deal)}
-            />
+        <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
+          {columns.map(({ stage, deals: stageDeals }) => (
+            <div key={stage.id} className="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/30">
+              <div className="flex items-center justify-between border-b px-3 py-2.5">
+                <p className="truncate text-sm font-medium" title={stage.label}>
+                  {stage.label}
+                </p>
+                <Badge variant="secondary" className="shrink-0">
+                  {stageDeals.length}
+                </Badge>
+              </div>
+              <div className="max-h-[65vh] min-h-[80px] space-y-2 overflow-y-auto p-2">
+                {stageDeals.length === 0 ? (
+                  <p className="px-2 py-4 text-center text-xs text-muted-foreground">No onboardings</p>
+                ) : (
+                  stageDeals.map((deal) => (
+                    <OnboardingCard
+                      key={deal.id}
+                      deal={deal}
+                      owner={deal.properties.hubspot_owner_id ? ownerMap.get(deal.properties.hubspot_owner_id) : undefined}
+                      isTracked={trackedIds.has(deal.id)}
+                      onOpen={() => setSelectedDealId(deal.id)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
