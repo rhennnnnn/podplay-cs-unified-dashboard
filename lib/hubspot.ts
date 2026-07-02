@@ -419,6 +419,8 @@ export function getLastEmailUrgency(
 export interface ContactFormSubmission {
   title: string;
   timestamp: number;
+  formId: string;
+  submissionId: string;
 }
 
 interface LegacyContactProfile {
@@ -426,22 +428,33 @@ interface LegacyContactProfile {
     title?: string;
     timestamp: number;
     "form-type": string;
+    "form-id": string;
+    "conversion-id": string;
   }[];
 }
 
 // Legacy Contacts v1 API — still the only endpoint that returns a contact's
 // full form submission history (title + date) by name. Modern v3 contact
 // properties only expose the single MOST RECENT conversion, not the full list.
+// `conversion-id` doubles as the submission ID HubSpot's UI uses in its
+// per-submission deep link — confirmed by matching a real submission URL.
 export async function getContactFormSubmissions(contactId: string): Promise<ContactFormSubmission[]> {
   try {
     const profile = await hubspotFetch<LegacyContactProfile>(`/contacts/v1/contact/vid/${contactId}/profile`);
     return (profile["form-submissions"] ?? [])
       .filter((s) => s["form-type"] === "HUBSPOT" && s.title)
-      .map((s) => ({ title: s.title!, timestamp: s.timestamp }))
+      .map((s) => ({ title: s.title!, timestamp: s.timestamp, formId: s["form-id"], submissionId: s["conversion-id"] }))
       .sort((a, b) => b.timestamp - a.timestamp);
   } catch {
     return [];
   }
+}
+
+// Deep link to the exact submission's answer view — confirmed working:
+// https://app.hubspot.com/submissions/{portal}/form/{formGuid}/submissions/{submissionId}
+export function getFormSubmissionUrl(portalId: string, formId: string, submissionId: string): string {
+  const redirect = encodeURIComponent(`https://app.hubspot.com/forms/${portalId}/views/all_forms`);
+  return `https://app.hubspot.com/submissions/${portalId}/form/${formId}/submissions/${submissionId}?redirectUrl=${redirect}`;
 }
 
 // Process-local cache shared across every request this server instance handles.

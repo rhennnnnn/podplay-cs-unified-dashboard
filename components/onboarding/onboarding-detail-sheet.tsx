@@ -8,6 +8,7 @@ import {
   FORM_CHECKLIST_ITEMS,
   formatDateWithRelative,
   formatRelativeTime,
+  getFormSubmissionUrl,
   getPipelineById,
   isFormChecked,
   TIER_LABEL,
@@ -186,7 +187,7 @@ export function OnboardingDetailSheet({
                           <li key={i} className="flex items-center justify-between gap-2 text-xs">
                             <span className="truncate">{sub.title}</span>
                             <a
-                              href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${dealId}`}
+                              href={getFormSubmissionUrl(PORTAL_ID, sub.formId, sub.submissionId)}
                               target="_blank"
                               rel="noreferrer"
                               className="flex shrink-0 items-center gap-1 text-primary hover:underline"
