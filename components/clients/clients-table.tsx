@@ -57,7 +57,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatusBadge } from "@/components/clients/status-badge";
+import { StatusQuickEdit } from "@/components/clients/status-quick-edit";
 import { ClientDetailSheet } from "@/components/clients/client-detail-sheet";
 import { ClientFormDialog } from "@/components/clients/client-form-dialog";
 import { DeleteClientDialog } from "@/components/clients/delete-client-dialog";
@@ -68,6 +68,7 @@ interface ClientsTableProps {
   initialLocations: Location[];
   userEmail: string;
   loginRoster: string[];
+  rosterMap: Record<string, string>;
 }
 
 const STATUS_SORT_RANK: Record<LocationStatus, number> = {
@@ -114,7 +115,7 @@ interface ReadinessInfo {
   token: string;
 }
 
-export function ClientsTable({ initialLocations, userEmail, loginRoster }: ClientsTableProps) {
+export function ClientsTable({ initialLocations, userEmail, loginRoster, rosterMap }: ClientsTableProps) {
   const [locations, setLocations] = React.useState<Location[]>(initialLocations);
   const [readinessByLocation, setReadinessByLocation] = React.useState<Record<string, ReadinessInfo>>({});
   const [tab, setTab] = React.useState<Tab>("active");
@@ -334,45 +335,44 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
           );
         },
       },
-    ];
-
-    if (tab === "active") {
-      base.push(
-        {
-          header: ({ column }) => (
-            <SortableHeader
-              label="Status"
-              sorted={column.getIsSorted()}
-              onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            />
-          ),
-          accessorFn: (l) => STATUS_SORT_RANK[l.status],
-          id: "status",
-          cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      {
+        header: ({ column }) => (
+          <SortableHeader
+            label="Status"
+            sorted={column.getIsSorted()}
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          />
+        ),
+        accessorFn: (l) => STATUS_SORT_RANK[l.status],
+        id: "status",
+        cell: ({ row }) => (
+          <StatusQuickEdit location={row.original} userEmail={userEmail} onChanged={refresh} />
+        ),
+      },
+      // Follow-up stays visible after a club opens too — post-open follow-up
+      // (e.g. post-open call/check-in) still needs tracking past the opening date.
+      {
+        id: "followUp",
+        header: ({ column }) => (
+          <SortableHeader
+            label="Follow-up"
+            sorted={column.getIsSorted()}
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          />
+        ),
+        accessorFn: (l) => (isFollowUpOverdue(l) ? 1 : 0),
+        cell: ({ row }) => {
+          const l = row.original;
+          const overdue = isFollowUpOverdue(l);
+          return (
+            <div className="flex gap-1">
+              <FollowUpTag label="Pre" done={l.pre_open_done} overdue={overdue && !l.pre_open_done} />
+              <FollowUpTag label="Post" done={l.post_open_done} overdue={overdue && !l.post_open_done} />
+            </div>
+          );
         },
-        {
-          id: "followUp",
-          header: ({ column }) => (
-            <SortableHeader
-              label="Follow-up"
-              sorted={column.getIsSorted()}
-              onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            />
-          ),
-          accessorFn: (l) => (isFollowUpOverdue(l) ? 1 : 0),
-          cell: ({ row }) => {
-            const l = row.original;
-            const overdue = isFollowUpOverdue(l);
-            return (
-              <div className="flex gap-1">
-                <FollowUpTag label="Pre" done={l.pre_open_done} overdue={overdue && !l.pre_open_done} />
-                <FollowUpTag label="Post" done={l.post_open_done} overdue={overdue && !l.post_open_done} />
-              </div>
-            );
-          },
-        }
-      );
-    }
+      },
+    ];
 
     base.push({
       id: "actions",
@@ -426,7 +426,7 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
 
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, readinessByLocation]);
+  }, [tab, readinessByLocation, userEmail]);
 
   const table = useReactTable({
     data: filtered,
@@ -576,6 +576,7 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
         onOpenChange={setSheetOpen}
         location={(selected && locations.find((l) => l.id === selected.id)) ?? selected}
         userEmail={userEmail}
+        rosterMap={rosterMap}
         onEdit={(location) => {
           setSheetOpen(false);
           setEditing(location);
