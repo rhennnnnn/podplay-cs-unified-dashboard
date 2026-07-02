@@ -1,17 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { nameFromEmail } from "@/lib/client-hub";
+import type { Profile } from "@/lib/types";
 import { OnboardingGrid } from "@/components/onboarding/onboarding-grid";
 
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
   const supabase = createClient();
-  const admin = createAdminClient();
-  const [{ data: userData }, { data: locations }, { data: usersData }] = await Promise.all([
+  const [{ data: userData }, { data: locations }, { data: profilesList }] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("locations").select("hubspot_deal_id").not("hubspot_deal_id", "is", null),
-    admin.auth.admin.listUsers(),
+    supabase.from("profiles").select("*"),
   ]);
 
   const userEmail = userData.user?.email ?? "";
@@ -22,14 +20,14 @@ export default async function OnboardingPage() {
     trackedLocations.map((l) => l.hubspot_deal_id).filter((id): id is string => Boolean(id))
   );
 
-  const trackerRoster = Array.from(
-    new Set((usersData?.users ?? []).map((u) => u.email).filter((e): e is string => Boolean(e)).map(nameFromEmail))
-  ).sort();
+  const profiles = (profilesList ?? []) as unknown as Profile[];
+  const trackerRoster = Array.from(new Set(profiles.map((p) => p.first_name))).sort();
+  const trackerName = profiles.find((p) => p.email === userEmail)?.first_name ?? "";
 
   return (
     <OnboardingGrid
       userEmail={userEmail}
-      trackerName={userEmail ? nameFromEmail(userEmail) : ""}
+      trackerName={trackerName}
       trackerRoster={trackerRoster}
       trackedDealIds={trackedDealIds}
     />

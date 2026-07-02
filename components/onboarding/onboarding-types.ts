@@ -21,6 +21,7 @@ export interface DealsResponse {
   deals: OnboardingListItem[];
   after: string | null;
   total: number;
+  fetchedAt: number | null;
 }
 
 export interface OwnersResponse {

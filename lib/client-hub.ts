@@ -73,12 +73,6 @@ export function formatRelativeDays(dateStr: string | null): string | null {
   return `${Math.abs(diffDays)}d ago`;
 }
 
-export function nameFromEmail(email: string): string {
-  const localPart = email.split("@")[0] ?? email;
-  const first = localPart.split(".")[0] ?? localPart;
-  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
-}
-
 export function parseTracker(tracker: string | null): string[] {
   if (!tracker) return [];
   return tracker

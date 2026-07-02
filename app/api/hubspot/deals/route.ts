@@ -5,6 +5,7 @@ import {
   PIPELINE_MAP,
   batchReadAssociations,
   batchReadObjects,
+  getCacheTimestamp,
   getLastEmail,
   hubspotFetch,
   mapLimit,
@@ -132,7 +133,7 @@ export async function GET(req: NextRequest) {
       return { deals, after: data.paging?.next?.after ?? null, total: data.total };
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, fetchedAt: getCacheTimestamp(cacheKey) });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to load onboardings." },

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Link2, Wrench, LogOut, Menu } from "lucide-react";
+import { Home, ClipboardList, Link2, Wrench, Users, LogOut, Menu } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/clients", label: "Client Opening Tracker", icon: ClipboardList },
   { href: "/dashboard/onboarding", label: "HubSpot Onboarding", icon: Link2 },
   { href: "/dashboard/ops-guide", label: "OPS Guide", icon: Wrench },
+  { href: "/dashboard/settings/accounts", label: "Team", icon: Users },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {

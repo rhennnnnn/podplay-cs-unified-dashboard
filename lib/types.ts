@@ -36,6 +36,18 @@ export interface Readiness {
   submitted_at: string | null;
 }
 
+export type ProfileRole = "default" | "admin";
+
+export interface Profile {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: ProfileRole;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -55,6 +67,12 @@ export interface Database {
         Row: Readiness;
         Insert: Partial<Readiness> & { location_id: string; token: string };
         Update: Partial<Readiness>;
+        Relationships: [];
+      };
+      profiles: {
+        Row: Profile;
+        Insert: Partial<Profile> & { id: string; email: string; first_name: string; last_name: string };
+        Update: Partial<Profile>;
         Relationships: [];
       };
     };
