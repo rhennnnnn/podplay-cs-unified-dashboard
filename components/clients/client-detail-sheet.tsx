@@ -19,6 +19,7 @@ interface ClientDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   location: Location | null;
   userEmail: string;
+  rosterMap: Record<string, string>;
   onEdit: (location: Location) => void;
   onChanged: () => void;
 }
@@ -37,6 +38,7 @@ export function ClientDetailSheet({
   onOpenChange,
   location,
   userEmail,
+  rosterMap,
   onEdit,
   onChanged,
 }: ClientDetailSheetProps) {
@@ -237,7 +239,8 @@ export function ClientDetailSheet({
                   <li key={entry.id} className="text-sm">
                     <p>{entry.details ?? entry.action}</p>
                     <p className="text-xs text-sidebar-foreground/50">
-                      {entry.user_email} · {formatDate(entry.created_at)}
+                      {(entry.user_email && rosterMap[entry.user_email]) ?? entry.user_email} ·{" "}
+                      {formatDate(entry.created_at)}
                     </p>
                   </li>
                 ))}

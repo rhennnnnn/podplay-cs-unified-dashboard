@@ -1,17 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { nameFromEmail } from "@/lib/client-hub";
+import type { Profile } from "@/lib/types";
 import { ClientsTable } from "@/components/clients/clients-table";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientHubPage() {
   const supabase = createClient();
-  const admin = createAdminClient();
-  const [{ data: locations, error }, { data: userData }, { data: usersData }] = await Promise.all([
+  const [{ data: locations, error }, { data: userData }, { data: profilesList }] = await Promise.all([
     supabase.from("locations").select("*").order("opening_date"),
     supabase.auth.getUser(),
-    admin.auth.admin.listUsers(),
+    supabase.from("profiles").select("*"),
   ]);
 
   if (error) {
@@ -22,15 +20,16 @@ export default async function ClientHubPage() {
     );
   }
 
-  const loginRoster = Array.from(
-    new Set((usersData?.users ?? []).map((u) => u.email).filter((e): e is string => Boolean(e)).map(nameFromEmail))
-  ).sort();
+  const profiles = (profilesList ?? []) as unknown as Profile[];
+  const loginRoster = Array.from(new Set(profiles.map((p) => p.first_name))).sort();
+  const rosterMap = Object.fromEntries(profiles.map((p) => [p.email, p.first_name]));
 
   return (
     <ClientsTable
       initialLocations={locations ?? []}
       userEmail={userData.user?.email ?? ""}
       loginRoster={loginRoster}
+      rosterMap={rosterMap}
     />
   );
 }
