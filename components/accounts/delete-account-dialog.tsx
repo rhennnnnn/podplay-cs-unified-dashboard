@@ -4,7 +4,7 @@ import * as React from "react";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Profile } from "@/lib/types";
+import type { AccountRow } from "@/lib/accounts-server";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,21 +14,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface DeleteAccountDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  account: Profile | null;
+  account: AccountRow | null;
   onDeleted: (id: string) => void;
 }
 
 export function DeleteAccountDialog({ open, onOpenChange, account, onDeleted }: DeleteAccountDialogProps) {
+  const [step, setStep] = React.useState<1 | 2>(1);
+  const [confirmText, setConfirmText] = React.useState("");
   const [deleting, setDeleting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setStep(1);
+      setConfirmText("");
+    }
+  }, [open]);
 
   if (!account) return null;
 
+  // Orphaned logins (no profile) have no first name to type — confirm by email instead.
+  const confirmTarget = account.hasProfile ? account.first_name ?? "" : account.email;
+  const matches = confirmText.trim() === confirmTarget;
+
   async function handleDelete() {
-    if (!account) return;
+    if (!account || !matches) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/accounts/${account.id}`, { method: "DELETE" });
@@ -36,7 +51,7 @@ export function DeleteAccountDialog({ open, onOpenChange, account, onDeleted }: 
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Failed to delete account.");
       }
-      toast.success(`${account.first_name}'s account deleted.`);
+      toast.success(`${account.hasProfile ? account.first_name : account.email}'s account deleted.`);
       onDeleted(account.id);
       onOpenChange(false);
     } catch (err) {
@@ -45,6 +60,8 @@ export function DeleteAccountDialog({ open, onOpenChange, account, onDeleted }: 
       setDeleting(false);
     }
   }
+
+  const who = account.hasProfile ? `${account.first_name} ${account.last_name}` : account.email;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,17 +72,38 @@ export function DeleteAccountDialog({ open, onOpenChange, account, onDeleted }: 
             Delete Account
           </DialogTitle>
           <DialogDescription>
-            Delete {account.first_name} {account.last_name}&apos;s account? This cannot be undone.
+            {step === 1
+              ? `This permanently deletes ${who}'s login — they will no longer be able to sign in. This cannot be undone.`
+              : `Type "${confirmTarget}" to confirm deletion.`}
           </DialogDescription>
         </DialogHeader>
+
+        {step === 2 && (
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-delete-account">{account.hasProfile ? "First name" : "Email"}</Label>
+            <Input
+              id="confirm-delete-account"
+              autoFocus
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={confirmTarget}
+            />
+          </div>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={deleting}>
             Cancel
           </Button>
-          <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
-            {deleting ? "Deleting…" : "Delete Account"}
-          </Button>
+          {step === 1 ? (
+            <Button type="button" variant="destructive" onClick={() => setStep(2)}>
+              Continue
+            </Button>
+          ) : (
+            <Button type="button" variant="destructive" disabled={!matches || deleting} onClick={handleDelete}>
+              {deleting ? "Deleting…" : "Delete Permanently"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

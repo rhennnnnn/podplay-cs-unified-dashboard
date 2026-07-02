@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Headset, Loader2, Lock, Mail } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -12,12 +12,17 @@ import { Label } from "@/components/ui/label";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(
+    searchParams.get("error") === "no_access"
+      ? "Your login isn't set up on the Team page yet. Ask an admin to add you."
+      : null
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
