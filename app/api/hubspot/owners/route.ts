@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { hubspotFetch, type HubspotOwner } from "@/lib/hubspot";
+import { hubspotFetch, withCache, type HubspotOwner } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +10,18 @@ interface OwnersResponse {
 
 export async function GET() {
   try {
-    const data = await hubspotFetch<OwnersResponse>("/crm/v3/owners?limit=100");
-    const owners: HubspotOwner[] = data.results.map((o) => ({
-      id: o.id,
-      firstName: o.firstName ?? "",
-      lastName: o.lastName ?? "",
-      email: o.email ?? "",
-    }));
+    // Owner roster changes rarely — cache generously across every concurrent user.
+    const owners = await withCache("owners", 10 * 60_000, async () => {
+      const data = await hubspotFetch<OwnersResponse>("/crm/v3/owners?limit=100");
+      return data.results.map(
+        (o): HubspotOwner => ({
+          id: o.id,
+          firstName: o.firstName ?? "",
+          lastName: o.lastName ?? "",
+          email: o.email ?? "",
+        })
+      );
+    });
     return NextResponse.json({ owners });
   } catch (err) {
     return NextResponse.json(

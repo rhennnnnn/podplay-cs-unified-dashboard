@@ -6,6 +6,7 @@ import {
   batchReadAssociations,
   batchReadObjects,
   hubspotFetch,
+  withCache,
   type PipelineKey,
 } from "@/lib/hubspot";
 
@@ -67,51 +68,61 @@ export async function GET(req: NextRequest) {
   if (search) body.query = search;
   if (after) body.after = after;
 
+  // Cache key covers every filter combo — identical requests from other CSAs
+  // viewing the same pipeline/owner/search within the TTL hit this instead of
+  // HubSpot. TTL sits just under the manual-refresh cooldown so a deliberate
+  // refresh almost always gets a real, fresh pull.
+  const cacheKey = `deals:${params.toString()}`;
+
   try {
-    const data = await hubspotFetch<SearchResponse>(`/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`, {
-      method: "POST",
-      body: JSON.stringify(body),
+    const result = await withCache(cacheKey, 45_000, async () => {
+      const data = await hubspotFetch<SearchResponse>(`/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      const ids = data.results.map((r) => r.id);
+      const [contactAssoc, companyAssoc] = await Promise.all([
+        batchReadAssociations(ONBOARDING_OBJECT_TYPE, "contacts", ids),
+        batchReadAssociations(ONBOARDING_OBJECT_TYPE, "companies", ids),
+      ]);
+
+      const contactIds = Array.from(new Set(Object.values(contactAssoc).flat()));
+      const companyIds = Array.from(new Set(Object.values(companyAssoc).flat()));
+
+      const [contacts, companies] = await Promise.all([
+        batchReadObjects<{ firstname: string | null; lastname: string | null; email: string | null }>(
+          "contacts",
+          contactIds,
+          ["firstname", "lastname", "email"]
+        ),
+        batchReadObjects<{ name: string | null; domain: string | null }>("companies", companyIds, ["name", "domain"]),
+      ]);
+
+      const deals = data.results.map((r) => {
+        const contactId = contactAssoc[r.id]?.[0];
+        const companyId = companyAssoc[r.id]?.[0];
+        const contact = contactId ? contacts[contactId] : undefined;
+        const company = companyId ? companies[companyId] : undefined;
+
+        return {
+          id: r.id,
+          properties: r.properties,
+          contact: contact
+            ? {
+                id: contactId!,
+                name: [contact.properties.firstname, contact.properties.lastname].filter(Boolean).join(" "),
+                email: contact.properties.email,
+              }
+            : null,
+          company: company ? { id: companyId!, name: company.properties.name, domain: company.properties.domain } : null,
+        };
+      });
+
+      return { deals, after: data.paging?.next?.after ?? null, total: data.total };
     });
 
-    const ids = data.results.map((r) => r.id);
-    const [contactAssoc, companyAssoc] = await Promise.all([
-      batchReadAssociations(ONBOARDING_OBJECT_TYPE, "contacts", ids),
-      batchReadAssociations(ONBOARDING_OBJECT_TYPE, "companies", ids),
-    ]);
-
-    const contactIds = Array.from(new Set(Object.values(contactAssoc).flat()));
-    const companyIds = Array.from(new Set(Object.values(companyAssoc).flat()));
-
-    const [contacts, companies] = await Promise.all([
-      batchReadObjects<{ firstname: string | null; lastname: string | null; email: string | null }>(
-        "contacts",
-        contactIds,
-        ["firstname", "lastname", "email"]
-      ),
-      batchReadObjects<{ name: string | null; domain: string | null }>("companies", companyIds, ["name", "domain"]),
-    ]);
-
-    const deals = data.results.map((r) => {
-      const contactId = contactAssoc[r.id]?.[0];
-      const companyId = companyAssoc[r.id]?.[0];
-      const contact = contactId ? contacts[contactId] : undefined;
-      const company = companyId ? companies[companyId] : undefined;
-
-      return {
-        id: r.id,
-        properties: r.properties,
-        contact: contact
-          ? {
-              id: contactId!,
-              name: [contact.properties.firstname, contact.properties.lastname].filter(Boolean).join(" "),
-              email: contact.properties.email,
-            }
-          : null,
-        company: company ? { id: companyId!, name: company.properties.name, domain: company.properties.domain } : null,
-      };
-    });
-
-    return NextResponse.json({ deals, after: data.paging?.next?.after ?? null, total: data.total });
+    return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to load onboardings." },

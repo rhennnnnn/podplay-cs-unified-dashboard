@@ -114,6 +114,47 @@ export function getStageProgress(stageId: string, pipelineId: string): { current
   return { current: index === -1 ? 0 : index + 1, total: linearStages.length };
 }
 
+// "Has this client already sent us X" checklist — sourced from the real
+// booleancheckbox properties on the Onboardings object (labels match HubSpot's
+// own property labels exactly). `linkKey` points at a property that holds an
+// actual URL for that item, when one exists, so the checklist can link straight
+// to the artifact instead of just showing a checkmark.
+export interface FormChecklistItem {
+  key: string;
+  label: string;
+  linkKey?: string;
+}
+
+export const FORM_CHECKLIST_ITEMS: FormChecklistItem[] = [
+  { key: "send_out_meeting_link", label: "Sent Forms and Meeting Link" },
+  { key: "receive_design_form", label: "Receive Design Form" },
+  { key: "receive_software_form", label: "Receive Software Form" },
+  { key: "receive_ios___android_app_form", label: "Receive iOS & Android App Form" },
+  { key: "receive_monitoring_form", label: "Receive Monitoring Form" },
+  { key: "receive_terminal_form", label: "Receive Terminal Form" },
+  { key: "receive_credit_card_authorization_form", label: "Receive Credit Card Authorization Form" },
+  { key: "receive_stripe_express_account", label: "Receive Stripe Express Account" },
+  { key: "cc_terminal_sent", label: "CC Terminal Sent" },
+  { key: "confirm_environment_pricing_structure", label: "Confirm Environment Pricing Structure" },
+  { key: "receive_approval_for_environment", label: "Receive Approval For Environment" },
+  { key: "configure_environment", label: "Configure Environment" },
+  { key: "send_out_environment", label: "Send Out Environment", linkKey: "env_link" },
+  { key: "receive_feedback_on_environment", label: "Receive Feedback On Environment" },
+  { key: "configure_hardware", label: "Configure Hardware" },
+  { key: "schedule_hardware_delivery", label: "Schedule Hardware Delivery" },
+  { key: "confirm_noc_access", label: "Confirm NOC Access" },
+  { key: "qr_code_scanner", label: "QR Code Scanner" },
+  { key: "send_native_phone_apps", label: "Send Native Phone Apps" },
+  { key: "send_academy_courses", label: "Send Academy Courses" },
+  { key: "share_customer_facing_considerations", label: "Share Customer-Facing Considerations" },
+  { key: "pro_auto_kick_off_call", label: "Pro/Auto Kick-off Call" },
+  { key: "send_csat_survey", label: "Send CSAT Survey" },
+];
+
+export function isFormChecked(value: string | null | undefined): boolean {
+  return value === "true";
+}
+
 export interface HubspotOwner {
   id: string;
   firstName: string;
@@ -250,8 +291,14 @@ interface OverviewSearchResult {
 
 // Aggregates lightweight stats across every onboarding for the dashboard Overview
 // page. Paginates the search endpoint (100/page) up to a small page cap so this
-// stays cheap even as the portal grows past a couple hundred records.
+// stays cheap even as the portal grows past a couple hundred records. Cached —
+// this alone is up to 10 HubSpot calls, and Overview is the page every CSA
+// lands on first, so uncached it would be the single biggest source of load.
 export async function getOnboardingOverviewStats(): Promise<OnboardingOverviewStats> {
+  return withCache("overview-stats", 60_000, () => fetchOnboardingOverviewStats());
+}
+
+async function fetchOnboardingOverviewStats(): Promise<OnboardingOverviewStats> {
   const stats: OnboardingOverviewStats = { total: 0, stuck: 0, overdueOpenings: 0, openingThisWeek: 0 };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -299,6 +346,43 @@ export async function getOnboardingOverviewStats(): Promise<OnboardingOverviewSt
   }
 
   return stats;
+}
+
+// Process-local cache shared across every request this server instance handles.
+// With ~10 CSAs viewing the same board/detail/owners data concurrently, this
+// collapses N nearly-simultaneous browser polls into a single HubSpot call:
+// the first caller populates the entry (and in-flight callers await the same
+// pending promise instead of firing their own request), everyone after reads
+// the cached value until it expires. Not a distributed cache (each warm
+// serverless instance has its own), but on a small team's traffic this is
+// what keeps normal usage well under HubSpot's rate limit.
+interface CacheEntry<T> {
+  expires: number;
+  value?: T;
+  promise?: Promise<T>;
+}
+const cacheStore = new Map<string, CacheEntry<unknown>>();
+
+export async function withCache<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const entry = cacheStore.get(key) as CacheEntry<T> | undefined;
+  if (entry && entry.expires > now) {
+    if (entry.promise) return entry.promise;
+    if (entry.value !== undefined) return entry.value;
+  }
+
+  const promise = fn()
+    .then((value) => {
+      cacheStore.set(key, { expires: Date.now() + ttlMs, value });
+      return value;
+    })
+    .catch((err) => {
+      cacheStore.delete(key);
+      throw err;
+    });
+
+  cacheStore.set(key, { expires: now + ttlMs, promise });
+  return promise;
 }
 
 // Server-only fetch wrapper — never import this from a client component.

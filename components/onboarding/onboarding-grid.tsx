@@ -22,10 +22,14 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
   return json;
 });
 
-// HubSpot's private-app rate limit is shared across every user viewing this page —
-// keep auto-refresh conservative and never refire just because the browser tab
-// regained focus (that's what was causing bursts and occasional "Failed to load").
-const REFRESH_INTERVAL = 90_000;
+// HubSpot's private-app rate limit is shared across every user viewing this page.
+// The API routes cache each query for 45s server-side (see lib/hubspot.ts
+// withCache), so polling and focus-revalidation here hit that cache — not
+// HubSpot directly — in the common case where more than one CSA is looking at
+// the same pipeline/filter within the same window. That's what makes it safe
+// to poll fairly often and revalidate on focus without risking a repeat of the
+// rate-limit bursts from before.
+const REFRESH_INTERVAL = 60_000;
 const COOLDOWN_SECONDS = 60;
 
 type PipelineKey = "basic" | "pro";
@@ -73,15 +77,16 @@ export function OnboardingGrid({
 
   const { data, error, isLoading, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
     refreshInterval: REFRESH_INTERVAL,
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 30_000,
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    dedupingInterval: 15_000,
     keepPreviousData: true,
     onSuccess: () => setLastRefreshed(new Date()),
   });
 
   const { data: ownersData } = useSWR<OwnersResponse>("/api/hubspot/owners", fetcher, {
     revalidateOnFocus: false,
+    dedupingInterval: 5 * 60_000,
   });
   const ownerMap = React.useMemo(() => {
     const map = new Map<string, HubspotOwner>();

@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { CheckSquare, ExternalLink, Mail, PhoneCall, StickyNote } from "lucide-react";
+import { CheckCircle2, CheckSquare, Circle, ExternalLink, Mail, PhoneCall, StickyNote } from "lucide-react";
 
 import {
+  FORM_CHECKLIST_ITEMS,
   formatDateWithRelative,
   formatRelativeTime,
   getPipelineById,
+  isFormChecked,
   TIER_LABEL,
   type HubspotOwner,
 } from "@/lib/hubspot";
@@ -221,6 +223,84 @@ export function OnboardingDetailSheet({
                   value={data.deal.updatedAt ? formatRelativeTime(data.deal.updatedAt) : null}
                 />
               </div>
+            </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* Forms & Resources — which onboarding forms/links are already on file */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Forms & Resources</p>
+                {props && (
+                  <span className="text-xs text-muted-foreground">
+                    {FORM_CHECKLIST_ITEMS.filter((item) => isFormChecked(props[item.key])).length} of{" "}
+                    {FORM_CHECKLIST_ITEMS.length} received
+                  </span>
+                )}
+              </div>
+
+              {(props?.env_link || props?.onboarding_deck || props?.linear_project) && (
+                <div className="flex flex-wrap gap-2">
+                  {props?.env_link && (
+                    <a
+                      href={props.env_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                    >
+                      Environment <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {props?.onboarding_deck && (
+                    <a
+                      href={props.onboarding_deck}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                    >
+                      Onboarding Deck <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {props?.linear_project && (
+                    <a
+                      href={props.linear_project}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                    >
+                      Linear Project <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                {FORM_CHECKLIST_ITEMS.map((item) => {
+                  const checked = props ? isFormChecked(props[item.key]) : false;
+                  const link = item.linkKey ? props?.[item.linkKey] : null;
+                  return (
+                    <li key={item.key} className="flex items-center gap-1.5 text-sm">
+                      {checked ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-accent" />
+                      ) : (
+                        <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                      )}
+                      <span className={checked ? "" : "text-muted-foreground"}>{item.label}</span>
+                      {checked && link && (
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                          aria-label={`Open link for ${item.label}`}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
 
             <Separator className="bg-sidebar-border" />
