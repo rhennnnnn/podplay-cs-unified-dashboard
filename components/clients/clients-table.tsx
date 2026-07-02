@@ -33,7 +33,6 @@ import {
   formatRelativeDays,
   isFollowUpOverdue,
   openReadinessChecklist,
-  parseTracker,
 } from "@/lib/client-hub";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -192,11 +191,11 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster, rosterM
     [locations]
   );
 
-  // Roster = people who can log in, plus any name already on a record (legacy data, migrated or not).
-  const trackerRoster = React.useMemo(
-    () => Array.from(new Set([...loginRoster, ...locations.flatMap((l) => parseTracker(l.tracker))])),
-    [locations, loginRoster]
-  );
+  // Base roster is the Team only — TrackingMultiSelect itself unions in any
+  // name already selected on the specific record being edited, so old/
+  // departed names don't disappear from a record that still has them, but
+  // also don't pollute the dropdown for every other record.
+  const trackerRoster = loginRoster;
 
   // Location options are always scoped to the selected client.
   const locationOptions = React.useMemo(() => {

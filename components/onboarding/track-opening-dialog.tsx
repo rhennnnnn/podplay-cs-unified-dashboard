@@ -16,16 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TrackingMultiSelect } from "@/components/shared/tracking-multi-select";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 const TIER_OPTIONS = ["Basic (+)", "Pro/Auto (+)"];
@@ -201,44 +196,5 @@ export function TrackOpeningDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TrackingMultiSelect({
-  selected,
-  roster,
-  onChange,
-}: {
-  selected: string[];
-  roster: string[];
-  onChange: (names: string[]) => void;
-}) {
-  // Union so a name already selected but missing from the roster stays visible and toggleable.
-  const options = Array.from(new Set([...roster, ...selected]));
-
-  function toggle(name: string, checked: boolean) {
-    onChange(checked ? [...selected, name] : selected.filter((n) => n !== name));
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" className="w-full justify-start font-normal">
-          {selected.length > 0 ? selected.join(" | ") : "Select tracking..."}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]" align="start">
-        {options.map((name) => (
-          <DropdownMenuCheckboxItem
-            key={name}
-            checked={selected.includes(name)}
-            onSelect={(e) => e.preventDefault()}
-            onCheckedChange={(checked) => toggle(name, checked)}
-          >
-            {name}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
