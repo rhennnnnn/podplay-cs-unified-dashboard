@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCallerProfile, isAdmin, requireAdmin } from "@/lib/permissions";
-import type { Profile, ProfileRole } from "@/lib/types";
+import { listAllAccounts } from "@/lib/accounts-server";
+import type { ProfileRole } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-// GET — list all profiles, admin only, joined with last_sign_in_at from auth.users.
+// GET — every Supabase Auth login (admin only), merged with its profiles
+// row when one exists. Logins without a profile still show up here so an
+// admin can see (and either add or remove) anyone who can currently sign
+// in but isn't on the Team yet.
 export async function GET() {
   try {
     await requireAdmin();
@@ -14,26 +18,8 @@ export async function GET() {
     return res as Response;
   }
 
-  const admin = createAdminClient();
-  const [{ data: profiles, error }, { data: usersData }] = await Promise.all([
-    admin.from("profiles").select("*").order("created_at", { ascending: false }),
-    admin.auth.admin.listUsers(),
-  ]);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const lastSignInByEmail = new Map(
-    (usersData?.users ?? []).map((u) => [u.email, u.last_sign_in_at ?? null])
-  );
-
-  const rows = ((profiles ?? []) as unknown as Profile[]).map((p) => ({
-    ...p,
-    last_sign_in_at: lastSignInByEmail.get(p.email) ?? null,
-  }));
-
-  return NextResponse.json({ accounts: rows });
+  const accounts = await listAllAccounts();
+  return NextResponse.json({ accounts });
 }
 
 interface CreateAccountBody {
