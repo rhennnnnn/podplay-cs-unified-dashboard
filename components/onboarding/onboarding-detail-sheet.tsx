@@ -176,6 +176,30 @@ export function OnboardingDetailSheet({
                       </a>
                     )}
                   </div>
+                  <div className="mt-2 flex items-center justify-between border-t pt-2 text-xs">
+                    {Number(contact.num_conversion_events ?? 0) > 0 ? (
+                      <span className="text-muted-foreground">
+                        {contact.num_conversion_events} form{contact.num_conversion_events === "1" ? "" : "s"} submitted
+                        {contact.recent_conversion_event_name && (
+                          <>
+                            {" "}
+                            · last: <span className="text-foreground">{contact.recent_conversion_event_name}</span>
+                            {contact.recent_conversion_date && ` (${formatRelativeTime(contact.recent_conversion_date)})`}
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No forms submitted yet</span>
+                    )}
+                    <a
+                      href={`https://app.hubspot.com/contacts/${PORTAL_ID}/contact/${contact.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex shrink-0 items-center gap-1 text-primary hover:underline"
+                    >
+                      View submissions <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No contact linked.</p>

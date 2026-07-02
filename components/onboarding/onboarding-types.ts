@@ -28,7 +28,17 @@ export interface OwnersResponse {
 
 export interface DealDetailResponse {
   deal: { id: string; properties: Record<string, string | null>; createdAt: string; updatedAt: string };
-  contacts: { id: string; firstname?: string | null; lastname?: string | null; email?: string | null; phone?: string | null; jobtitle?: string | null }[];
+  contacts: {
+    id: string;
+    firstname?: string | null;
+    lastname?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    jobtitle?: string | null;
+    num_conversion_events?: string | null;
+    recent_conversion_event_name?: string | null;
+    recent_conversion_date?: string | null;
+  }[];
   companies: { id: string; name?: string | null; domain?: string | null; phone?: string | null }[];
   notes: { id: string; hs_note_body?: string | null; hs_timestamp?: string | null; hubspot_owner_id?: string | null }[];
 }

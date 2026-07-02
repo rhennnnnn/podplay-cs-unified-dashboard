@@ -56,6 +56,14 @@ export function OnboardingGrid({
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
   const [lastRefreshed, setLastRefreshed] = React.useState<Date | null>(null);
   const [cooldown, setCooldown] = React.useState(0);
+  const [, forceTick] = React.useState(0);
+
+  // "Updated Xs ago" would otherwise freeze until the next poll/re-render —
+  // tick every second purely to recompute that label live.
+  React.useEffect(() => {
+    const t = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   React.useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);

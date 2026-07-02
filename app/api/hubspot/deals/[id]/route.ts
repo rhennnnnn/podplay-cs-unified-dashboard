@@ -69,11 +69,25 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       ]).then(([c, co, n]) => [c.slice(0, 10), co.slice(0, 10), n] as const);
 
       const [contacts, companies, notes] = await Promise.all([
-        batchReadObjects<{ firstname: string | null; lastname: string | null; email: string | null; phone: string | null; jobtitle: string | null }>(
-          "contacts",
-          contactIds,
-          ["firstname", "lastname", "email", "phone", "jobtitle"]
-        ),
+        batchReadObjects<{
+          firstname: string | null;
+          lastname: string | null;
+          email: string | null;
+          phone: string | null;
+          jobtitle: string | null;
+          num_conversion_events: string | null;
+          recent_conversion_event_name: string | null;
+          recent_conversion_date: string | null;
+        }>("contacts", contactIds, [
+          "firstname",
+          "lastname",
+          "email",
+          "phone",
+          "jobtitle",
+          "num_conversion_events",
+          "recent_conversion_event_name",
+          "recent_conversion_date",
+        ]),
         batchReadObjects<{ name: string | null; domain: string | null; phone: string | null }>(
           "companies",
           companyIds,
