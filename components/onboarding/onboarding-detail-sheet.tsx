@@ -1,0 +1,290 @@
+"use client";
+
+import * as React from "react";
+import useSWR from "swr";
+import { CheckSquare, ExternalLink, Mail, PhoneCall, StickyNote } from "lucide-react";
+
+import {
+  formatDateWithRelative,
+  formatRelativeTime,
+  getPipelineById,
+  TIER_LABEL,
+  type HubspotOwner,
+} from "@/lib/hubspot";
+import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ActivityResponse, DealDetailResponse, OnboardingListItem } from "@/components/onboarding/onboarding-types";
+
+const PORTAL_ID = "44006894";
+const ACTIVITY_ICON = { note: StickyNote, email: Mail, call: PhoneCall, task: CheckSquare };
+
+const fetcher = (url: string) => fetch(url).then(async (res) => {
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Request failed");
+  return json;
+});
+
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-sm">{value || "—"}</p>
+    </div>
+  );
+}
+
+interface OnboardingDetailSheetProps {
+  dealId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  listItem: OnboardingListItem | null;
+  ownerMap: Map<string, HubspotOwner>;
+  isTracked: boolean;
+  onTrackOpening: (deal: OnboardingListItem) => void;
+}
+
+export function OnboardingDetailSheet({
+  dealId,
+  open,
+  onOpenChange,
+  listItem,
+  ownerMap,
+  isTracked,
+  onTrackOpening,
+}: OnboardingDetailSheetProps) {
+  const { data, isLoading } = useSWR<DealDetailResponse>(dealId ? `/api/hubspot/deals/${dealId}` : null, fetcher);
+  const { data: activityData } = useSWR<ActivityResponse>(dealId ? `/api/hubspot/activity/${dealId}` : null, fetcher);
+  const [trackedLocationId, setTrackedLocationId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isTracked || !dealId) {
+      setTrackedLocationId(null);
+      return;
+    }
+    const supabase = createClient();
+    supabase
+      .from("locations")
+      .select("id")
+      .eq("hubspot_deal_id", dealId)
+      .maybeSingle()
+      .then(({ data: loc }) => setTrackedLocationId((loc as { id: string } | null)?.id ?? null));
+  }, [isTracked, dealId]);
+
+  if (!dealId) return null;
+
+  const props = data?.deal.properties;
+  const pipeline = props?.hs_pipeline ? getPipelineById(props.hs_pipeline) : undefined;
+  const owner = props?.hubspot_owner_id ? ownerMap.get(props.hubspot_owner_id) : undefined;
+  const projectManager = props?.podplay_project_manager ? ownerMap.get(props.podplay_project_manager) : undefined;
+  const closeDate = formatDateWithRelative(props?.grand_opening ?? props?.anticipated_opening ?? null);
+  const contact = data?.contacts[0];
+  const company = data?.companies[0];
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+        {isLoading || !data ? (
+          <div className="space-y-4 pr-2">
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-6 pr-2">
+            {/* Section 1 — Header */}
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-lg font-semibold text-white">{props?.hs_name || "(unnamed onboarding)"}</h2>
+                <a
+                  href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${dealId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sidebar-foreground/70 hover:text-white"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge variant="secondary">{pipeline?.label ?? "Unknown pipeline"}</Badge>
+                {props?.podplay_tier && <Badge variant="outline">{TIER_LABEL[props.podplay_tier] ?? props.podplay_tier}</Badge>}
+              </div>
+
+              {pipeline && (
+                <div className="mt-4 flex items-center gap-1 overflow-x-auto pb-1">
+                  {pipeline.stages
+                    .filter((s) => s.label !== "MIA/No Response")
+                    .map((s) => {
+                      const isCurrent = s.id === props?.hs_pipeline_stage;
+                      return (
+                        <div
+                          key={s.id}
+                          className={cn(
+                            "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                            isCurrent ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {s.label}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <Field label="Owner" value={owner ? `${owner.firstName} ${owner.lastName}`.trim() : null} />
+                <Field
+                  label="Opening Date"
+                  value={
+                    closeDate ? (
+                      <span className={closeDate.overdue ? "text-destructive" : ""}>
+                        {closeDate.absolute} {closeDate.overdue && "(overdue)"}
+                      </span>
+                    ) : null
+                  }
+                />
+                {projectManager && (
+                  <Field label="Project Manager" value={`${projectManager.firstName} ${projectManager.lastName}`.trim()} />
+                )}
+              </div>
+            </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* Section 2 — Contact & Company */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Contact & Company</p>
+              {contact ? (
+                <div className="rounded-lg border p-3 text-sm">
+                  <p className="font-medium">{[contact.firstname, contact.lastname].filter(Boolean).join(" ")}</p>
+                  {contact.jobtitle && <p className="text-muted-foreground">{contact.jobtitle}</p>}
+                  <div className="mt-1 flex flex-wrap gap-3">
+                    {contact.email && (
+                      <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
+                        {contact.email}
+                      </a>
+                    )}
+                    {contact.phone && (
+                      <a href={`tel:${contact.phone}`} className="text-primary hover:underline">
+                        {contact.phone}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No contact linked.</p>
+              )}
+              {company && (
+                <div className="rounded-lg border p-3 text-sm">
+                  <p className="font-medium">{company.name}</p>
+                  <div className="mt-1 flex flex-wrap gap-3">
+                    {company.domain && (
+                      <a
+                        href={`https://${company.domain}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {company.domain}
+                      </a>
+                    )}
+                    {company.phone && <span>{company.phone}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* Section 3 — Deal Details */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Onboarding Details</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Deal Type" value={props?.deal_type} />
+                <Field label="Courts" value={props?.courts} />
+                <Field label="Membership Presale" value={props?.membership_presale_date} />
+                <Field label="Hardware Delivery" value={props?.hardware_delivery_date} />
+                <Field label="Installation Start" value={props?.installation_start_date} />
+                <Field label="Soft Open" value={props?.soft_open} />
+                <Field label="Door Access" value={props?.door_access} />
+                <Field label="Go Viral" value={props?.go_viral} />
+                <Field
+                  label="Created"
+                  value={data.deal.createdAt ? new Date(data.deal.createdAt).toLocaleDateString() : null}
+                />
+                <Field
+                  label="Last Modified"
+                  value={data.deal.updatedAt ? formatRelativeTime(data.deal.updatedAt) : null}
+                />
+              </div>
+            </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* Section 4 — Recent Activity */}
+            <div>
+              <p className="mb-2 text-sm font-medium">Recent Activity</p>
+              {!activityData ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : activityData.activity.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recent activity recorded.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {activityData.activity.map((item, i) => {
+                    const Icon = ACTIVITY_ICON[item.type];
+                    const itemOwner = item.ownerId ? ownerMap.get(item.ownerId) : undefined;
+                    return (
+                      <li key={i} className="flex gap-2 text-sm">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <div>
+                          <p className="line-clamp-2">{item.preview || "(no content)"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {itemOwner ? `${itemOwner.firstName} ${itemOwner.lastName}`.trim() : "Unknown"} ·{" "}
+                            {formatRelativeTime(item.timestamp)}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* Section 5 — Track Client's Opening */}
+            <div className="rounded-xl bg-accent/10 p-4">
+              <p className="font-medium">Track This Client&apos;s Opening</p>
+              <p className="text-sm text-muted-foreground">Add this onboarding to the Client Opening Tracker.</p>
+              {isTracked ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <Badge>Already tracked</Badge>
+                  {trackedLocationId && (
+                    <a href="/dashboard/clients" className="text-sm text-primary hover:underline">
+                      View in tracker
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  className="mt-3 w-full"
+                  onClick={() => listItem && onTrackOpening(listItem)}
+                  disabled={!listItem}
+                >
+                  Create Tracker Entry
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}

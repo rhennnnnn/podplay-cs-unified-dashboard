@@ -1,24 +1,29 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/server";
+import { nameFromEmail } from "@/lib/client-hub";
+import { OnboardingGrid } from "@/components/onboarding/onboarding-grid";
 
-export default function OnboardingPage() {
+export const dynamic = "force-dynamic";
+
+export default async function OnboardingPage() {
+  const supabase = createClient();
+  const [{ data: userData }, { data: locations }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("locations").select("hubspot_deal_id").not("hubspot_deal_id", "is", null),
+  ]);
+
+  const userEmail = userData.user?.email ?? "";
+  // Same @supabase/ssr generic-collapsing typing defect documented in Session 2 —
+  // `.select()` with a column list resolves to `never` regardless of the Database generic.
+  const trackedLocations = (locations ?? []) as unknown as { hubspot_deal_id: string | null }[];
+  const trackedDealIds = new Set(
+    trackedLocations.map((l) => l.hubspot_deal_id).filter((id): id is string => Boolean(id))
+  );
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">HubSpot Onboarding</h1>
-        <p className="text-sm text-muted-foreground">
-          Surface HubSpot onboarding deals and contact details without leaving the dashboard.
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Coming soon</CardTitle>
-          <CardDescription>
-            This panel will call the HubSpot API using `HUBSPOT_PRIVATE_APP_TOKEN`.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
-    </div>
+    <OnboardingGrid
+      userEmail={userEmail}
+      trackerName={userEmail ? nameFromEmail(userEmail) : ""}
+      trackedDealIds={trackedDealIds}
+    />
   );
 }
