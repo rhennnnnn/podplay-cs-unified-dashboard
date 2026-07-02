@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { RefreshCw, Search } from "lucide-react";
+import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { formatRelativeTime, PIPELINE_MAP, type HubspotOwner } from "@/lib/hubspot";
 import { Badge } from "@/components/ui/badge";
@@ -156,6 +156,11 @@ export function OnboardingGrid({
             <Button size="sm" variant="outline" disabled={cooldown > 0} onClick={handleManualRefresh} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
               {cooldown > 0 ? `Refresh (${cooldown}s)` : "Refresh"}
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" asChild>
+              <a href="https://app.hubspot.com/contacts/44006894/objects/0-162" target="_blank" rel="noreferrer">
+                Open in HubSpot <ExternalLink className="h-3.5 w-3.5" />
+              </a>
             </Button>
           </div>
         </div>
