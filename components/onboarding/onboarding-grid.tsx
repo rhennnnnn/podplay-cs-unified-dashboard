@@ -28,10 +28,16 @@ const COOLDOWN_SECONDS = 60;
 interface OnboardingGridProps {
   userEmail: string;
   trackerName: string;
+  trackerRoster: string[];
   trackedDealIds: Set<string>;
 }
 
-export function OnboardingGrid({ userEmail, trackerName, trackedDealIds: initialTracked }: OnboardingGridProps) {
+export function OnboardingGrid({
+  userEmail,
+  trackerName,
+  trackerRoster,
+  trackedDealIds: initialTracked,
+}: OnboardingGridProps) {
   const [pipeline, setPipeline] = React.useState<"all" | "basic" | "pro">("all");
   const [stage, setStage] = React.useState<string>("all");
   const [owner, setOwner] = React.useState<string>("all");
@@ -257,6 +263,7 @@ export function OnboardingGrid({ userEmail, trackerName, trackedDealIds: initial
         onOpenChange={(open) => !open && setTrackDeal(null)}
         userEmail={userEmail}
         trackerName={trackerName}
+        trackerRoster={trackerRoster}
         onTracked={handleTracked}
       />
     </div>

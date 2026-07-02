@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { tierToTrackerTier } from "@/lib/hubspot";
+import { joinTracker } from "@/lib/client-hub";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +16,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,14 +51,24 @@ interface TrackOpeningDialogProps {
   onOpenChange: (open: boolean) => void;
   userEmail: string;
   trackerName: string;
+  trackerRoster: string[];
   onTracked: (dealId: string) => void;
 }
 
-export function TrackOpeningDialog({ deal, open, onOpenChange, userEmail, trackerName, onTracked }: TrackOpeningDialogProps) {
+export function TrackOpeningDialog({
+  deal,
+  open,
+  onOpenChange,
+  userEmail,
+  trackerName,
+  trackerRoster,
+  onTracked,
+}: TrackOpeningDialogProps) {
   const [clientName, setClientName] = React.useState("");
   const [name, setName] = React.useState("");
   const [tier, setTier] = React.useState("");
   const [openingDate, setOpeningDate] = React.useState("");
+  const [tracker, setTracker] = React.useState<string[]>([]);
   const [notes, setNotes] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -61,9 +78,10 @@ export function TrackOpeningDialog({ deal, open, onOpenChange, userEmail, tracke
       setName(deal.properties.hs_name ?? "");
       setTier(tierToTrackerTier(deal.properties.podplay_tier));
       setOpeningDate(toIsoDate(deal.properties.grand_opening ?? deal.properties.anticipated_opening));
+      setTracker(trackerName ? [trackerName] : []);
       setNotes("");
     }
-  }, [open, deal]);
+  }, [open, deal, trackerName]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -84,7 +102,7 @@ export function TrackOpeningDialog({ deal, open, onOpenChange, userEmail, tracke
         name,
         tier: tier || null,
         opening_date: openingDate,
-        tracker: trackerName || null,
+        tracker: joinTracker(tracker),
         status: "on-track" as LocationStatus,
         notes: notes || null,
         hubspot_deal_id: deal.id,
@@ -163,8 +181,8 @@ export function TrackOpeningDialog({ deal, open, onOpenChange, userEmail, tracke
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="tracker">Tracking</Label>
-            <Input id="tracker" value={trackerName} disabled />
+            <Label>Tracking</Label>
+            <TrackingMultiSelect selected={tracker} roster={trackerRoster} onChange={setTracker} />
           </div>
 
           <div className="space-y-1.5">
@@ -183,5 +201,44 @@ export function TrackOpeningDialog({ deal, open, onOpenChange, userEmail, tracke
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TrackingMultiSelect({
+  selected,
+  roster,
+  onChange,
+}: {
+  selected: string[];
+  roster: string[];
+  onChange: (names: string[]) => void;
+}) {
+  // Union so a name already selected but missing from the roster stays visible and toggleable.
+  const options = Array.from(new Set([...roster, ...selected]));
+
+  function toggle(name: string, checked: boolean) {
+    onChange(checked ? [...selected, name] : selected.filter((n) => n !== name));
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" className="w-full justify-start font-normal">
+          {selected.length > 0 ? selected.join(" | ") : "Select tracking..."}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]" align="start">
+        {options.map((name) => (
+          <DropdownMenuCheckboxItem
+            key={name}
+            checked={selected.includes(name)}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(checked) => toggle(name, checked)}
+          >
+            {name}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

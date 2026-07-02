@@ -229,6 +229,78 @@ export async function getAssociatedIds(
   }
 }
 
+export interface OnboardingOverviewStats {
+  total: number;
+  stuck: number;
+  overdueOpenings: number;
+  openingThisWeek: number;
+}
+
+interface OverviewSearchResult {
+  results: {
+    properties: {
+      hs_pipeline: string | null;
+      hs_pipeline_stage: string | null;
+      anticipated_opening: string | null;
+      grand_opening: string | null;
+    };
+  }[];
+  paging?: { next?: { after: string } };
+}
+
+// Aggregates lightweight stats across every onboarding for the dashboard Overview
+// page. Paginates the search endpoint (100/page) up to a small page cap so this
+// stays cheap even as the portal grows past a couple hundred records.
+export async function getOnboardingOverviewStats(): Promise<OnboardingOverviewStats> {
+  const stats: OnboardingOverviewStats = { total: 0, stuck: 0, overdueOpenings: 0, openingThisWeek: 0 };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekFromNow = new Date(today.getTime() + 7 * 86_400_000);
+
+  let after: string | undefined;
+  const MAX_PAGES = 10;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body: Record<string, unknown> = {
+      filterGroups: [],
+      properties: ["hs_pipeline", "hs_pipeline_stage", "anticipated_opening", "grand_opening"],
+      limit: 100,
+    };
+    if (after) body.after = after;
+
+    const data = await hubspotFetch<OverviewSearchResult>(`/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    for (const r of data.results) {
+      stats.total++;
+      const stage =
+        r.properties.hs_pipeline && r.properties.hs_pipeline_stage
+          ? getStage(r.properties.hs_pipeline, r.properties.hs_pipeline_stage)
+          : undefined;
+
+      if (stage?.label === "MIA/No Response") {
+        stats.stuck++;
+        continue;
+      }
+      if (stage?.isClosed) continue;
+
+      const openingDate = r.properties.grand_opening ?? r.properties.anticipated_opening;
+      if (!openingDate) continue;
+      const target = new Date(openingDate);
+      target.setHours(0, 0, 0, 0);
+      if (target.getTime() < today.getTime()) stats.overdueOpenings++;
+      else if (target.getTime() <= weekFromNow.getTime()) stats.openingThisWeek++;
+    }
+
+    after = data.paging?.next?.after;
+    if (!after) break;
+  }
+
+  return stats;
+}
+
 // Server-only fetch wrapper — never import this from a client component.
 export async function hubspotFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
