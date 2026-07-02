@@ -1,4 +1,5 @@
-import { ClipboardList, AlertTriangle, CalendarClock, CheckCircle2, Link2, UserX, Clock3 } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, ClipboardList, AlertTriangle, CalendarClock, CheckCircle2, Link2, UserX, Clock3 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { computeClientStats } from "@/lib/client-hub";
@@ -64,9 +65,14 @@ export default async function OverviewPage() {
         </div>
       )}
 
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">HubSpot Onboarding</h2>
-        <p className="text-sm text-muted-foreground">Live snapshot across Basic(+) and Pro/Auto(+) pipelines.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">HubSpot Onboarding</h2>
+          <p className="text-sm text-muted-foreground">Live snapshot across Basic(+) and Pro/Auto(+) pipelines.</p>
+        </div>
+        <Link href="/dashboard/onboarding" className="flex items-center gap-1 text-sm text-primary hover:underline">
+          View Board <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       {onboardingStats === null ? (

@@ -350,6 +350,100 @@ async function fetchOnboardingOverviewStats(): Promise<OnboardingOverviewStats> 
   return stats;
 }
 
+// Runs `fn` over `items` with at most `limit` in flight at once. Used for the
+// per-card last-email lookup on the board — without a cap, fetching ~50 cards'
+// worth of associations+batch-reads all at once is exactly the burst that
+// tripped HubSpot's rate limit earlier.
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+export const EMAIL_DIRECTION_LABEL: Record<string, string> = {
+  EMAIL: "PodPlay",
+  INCOMING_EMAIL: "Client",
+  FORWARDED_EMAIL: "Forwarded",
+  DRAFT_EMAIL: "Draft",
+};
+
+export interface LastEmail {
+  timestamp: string;
+  direction: string;
+}
+
+// Fetches the single most recent email logged on an onboarding record. Kept
+// separate from the general activity feed (notes/calls/tasks) because the
+// board only needs this one signal per card, cheaply, for every card at once.
+export async function getLastEmail(dealId: string): Promise<LastEmail | null> {
+  const emailIds = (await getAssociatedIds(ONBOARDING_OBJECT_TYPE, dealId, "emails")).slice(0, 100);
+  if (emailIds.length === 0) return null;
+
+  const emails = await batchReadObjects<{ hs_timestamp: string | null; hs_email_direction: string | null }>(
+    "emails",
+    emailIds,
+    ["hs_timestamp", "hs_email_direction"]
+  );
+
+  let latest: LastEmail | null = null;
+  for (const e of Object.values(emails)) {
+    const ts = e.properties.hs_timestamp;
+    if (!ts) continue;
+    if (!latest || new Date(ts).getTime() > new Date(latest.timestamp).getTime()) {
+      latest = { timestamp: ts, direction: e.properties.hs_email_direction ?? "EMAIL" };
+    }
+  }
+  return latest;
+}
+
+// Card color coding by staleness of the last email — only meaningful while the
+// onboarding is still active, so closed/MIA stages never get flagged.
+export function getLastEmailUrgency(
+  lastEmail: LastEmail | null,
+  stageIsClosed: boolean
+): "none" | "warning" | "critical" {
+  if (stageIsClosed || !lastEmail) return "none";
+  const days = (Date.now() - new Date(lastEmail.timestamp).getTime()) / 86_400_000;
+  if (days >= 7) return "critical";
+  if (days >= 4) return "warning";
+  return "none";
+}
+
+export interface ContactFormSubmission {
+  title: string;
+  timestamp: number;
+}
+
+interface LegacyContactProfile {
+  "form-submissions"?: {
+    title?: string;
+    timestamp: number;
+    "form-type": string;
+  }[];
+}
+
+// Legacy Contacts v1 API — still the only endpoint that returns a contact's
+// full form submission history (title + date) by name. Modern v3 contact
+// properties only expose the single MOST RECENT conversion, not the full list.
+export async function getContactFormSubmissions(contactId: string): Promise<ContactFormSubmission[]> {
+  try {
+    const profile = await hubspotFetch<LegacyContactProfile>(`/contacts/v1/contact/vid/${contactId}/profile`);
+    return (profile["form-submissions"] ?? [])
+      .filter((s) => s["form-type"] === "HUBSPOT" && s.title)
+      .map((s) => ({ title: s.title!, timestamp: s.timestamp }))
+      .sort((a, b) => b.timestamp - a.timestamp);
+  } catch {
+    return [];
+  }
+}
+
 // Process-local cache shared across every request this server instance handles.
 // With ~10 CSAs viewing the same board/detail/owners data concurrently, this
 // collapses N nearly-simultaneous browser polls into a single HubSpot call:

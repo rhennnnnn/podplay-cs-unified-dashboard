@@ -5,7 +5,9 @@ import {
   ONBOARDING_OBJECT_TYPE,
   batchReadObjects,
   getAssociatedIds,
+  getContactFormSubmissions,
   hubspotFetch,
+  mapLimit,
   withCache,
 } from "@/lib/hubspot";
 
@@ -24,8 +26,13 @@ const DETAIL_PROPERTIES = [
   "grand_opening",
   "membership_presale_date",
   "hardware_delivery_date",
+  "hardware_configuration_date",
   "installation_start_date",
   "onboarding_completed_date",
+  "qc_call_installation_complete",
+  "camera_adjustment_call",
+  "internet_configuration_call",
+  "kiosk_tv_app",
   "soft_open",
   "open_date",
   "podplay_project_manager",
@@ -34,6 +41,10 @@ const DETAIL_PROPERTIES = [
   "experience_vertical",
   "go_viral",
   "door_access",
+  "migration",
+  "ios_app",
+  "android_app",
+  "web_app",
   "hs_createdate",
   "hs_lastmodifieddate",
   "env_link",
@@ -100,9 +111,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         ),
       ]);
 
+      const contactList = Object.values(contacts);
+      const formSubmissionsByContact = await mapLimit(contactList, 4, (c) => getContactFormSubmissions(c.id));
+
       return {
         deal: record,
-        contacts: Object.values(contacts).map((c) => ({ id: c.id, ...c.properties })),
+        contacts: contactList.map((c, i) => ({
+          id: c.id,
+          ...c.properties,
+          formSubmissions: formSubmissionsByContact[i],
+        })),
         companies: Object.values(companies).map((c) => ({ id: c.id, ...c.properties })),
         notes: Object.values(notes)
           .map((n) => ({ id: n.id, ...n.properties }))

@@ -99,7 +99,7 @@ export function OnboardingDetailSheet({
         ) : (
           <div className="space-y-6 pr-2">
             {/* Section 1 — Header */}
-            <div>
+            <div className="pr-8">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-lg font-semibold text-white">{props?.hs_name || "(unnamed onboarding)"}</h2>
                 <a
@@ -111,7 +111,7 @@ export function OnboardingDetailSheet({
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <Badge variant="secondary">{pipeline?.label ?? "Unknown pipeline"}</Badge>
                 {props?.podplay_tier && <Badge variant="outline">{TIER_LABEL[props.podplay_tier] ?? props.podplay_tier}</Badge>}
               </div>
@@ -176,29 +176,29 @@ export function OnboardingDetailSheet({
                       </a>
                     )}
                   </div>
-                  <div className="mt-2 flex items-center justify-between border-t pt-2 text-xs">
-                    {Number(contact.num_conversion_events ?? 0) > 0 ? (
-                      <span className="text-muted-foreground">
-                        {contact.num_conversion_events} form{contact.num_conversion_events === "1" ? "" : "s"} submitted
-                        {contact.recent_conversion_event_name && (
-                          <>
-                            {" "}
-                            · last: <span className="text-foreground">{contact.recent_conversion_event_name}</span>
-                            {contact.recent_conversion_date && ` (${formatRelativeTime(contact.recent_conversion_date)})`}
-                          </>
-                        )}
-                      </span>
+                  <div className="mt-2 border-t pt-2">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Forms Submitted
+                    </p>
+                    {contact.formSubmissions && contact.formSubmissions.length > 0 ? (
+                      <ul className="space-y-1">
+                        {contact.formSubmissions.map((sub, i) => (
+                          <li key={i} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate">{sub.title}</span>
+                            <a
+                              href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${dealId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex shrink-0 items-center gap-1 text-primary hover:underline"
+                            >
+                              {new Date(sub.timestamp).toLocaleDateString()} <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
                     ) : (
-                      <span className="text-muted-foreground">No forms submitted yet</span>
+                      <p className="text-xs text-muted-foreground">No forms submitted yet.</p>
                     )}
-                    <a
-                      href={`https://app.hubspot.com/contacts/${PORTAL_ID}/contact/${contact.id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex shrink-0 items-center gap-1 text-primary hover:underline"
-                    >
-                      View submissions <ExternalLink className="h-3 w-3" />
-                    </a>
                   </div>
                 </div>
               ) : (
@@ -232,12 +232,26 @@ export function OnboardingDetailSheet({
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Deal Type" value={props?.deal_type} />
                 <Field label="Courts" value={props?.courts} />
+                <Field label="Migration" value={props?.migration} />
+                <Field label="Go Viral" value={props?.go_viral} />
+                <Field label="Door Access" value={props?.door_access} />
+                <Field label="Send CSAT Survey" value={props?.send_csat_survey} />
                 <Field label="Membership Presale" value={props?.membership_presale_date} />
                 <Field label="Hardware Delivery" value={props?.hardware_delivery_date} />
+                <Field label="Hardware Configuration" value={props?.hardware_configuration_date} />
                 <Field label="Installation Start" value={props?.installation_start_date} />
+                <Field label="QC / Installation Complete" value={props?.qc_call_installation_complete} />
+                <Field label="Camera Adjustment Call" value={props?.camera_adjustment_call} />
+                <Field label="Internet Configuration Call" value={props?.internet_configuration_call} />
+                <Field label="Kiosk/TV App" value={props?.kiosk_tv_app} />
+                <Field label="Anticipated Opening" value={props?.anticipated_opening} />
+                <Field label="Grand Opening" value={props?.grand_opening} />
                 <Field label="Soft Open" value={props?.soft_open} />
-                <Field label="Door Access" value={props?.door_access} />
-                <Field label="Go Viral" value={props?.go_viral} />
+                <Field label="Onboarding Completed" value={props?.onboarding_completed_date} />
+                <Field label="iOS App" value={props?.ios_app} />
+                <Field label="Android App" value={props?.android_app} />
+                <Field label="Web App" value={props?.web_app} />
+                <Field label="Stripe ID" value={props?.stripe_id} />
                 <Field
                   label="Created"
                   value={data.deal.createdAt ? new Date(data.deal.createdAt).toLocaleDateString() : null}
