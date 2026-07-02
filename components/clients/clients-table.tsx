@@ -16,15 +16,25 @@ import {
   ArrowUp,
   ArrowUpDown,
   CalendarClock,
+  Check,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
   MoreHorizontal,
   Plus,
   Search,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
-import { computeClientStats, formatDate, isFollowUpOverdue, parseTracker } from "@/lib/client-hub";
+import {
+  computeClientStats,
+  formatDate,
+  formatRelativeDays,
+  isFollowUpOverdue,
+  openReadinessChecklist,
+  parseTracker,
+} from "@/lib/client-hub";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -49,6 +60,7 @@ import {
 import { StatusBadge } from "@/components/clients/status-badge";
 import { ClientDetailSheet } from "@/components/clients/client-detail-sheet";
 import { ClientFormDialog } from "@/components/clients/client-form-dialog";
+import { DeleteClientDialog } from "@/components/clients/delete-client-dialog";
 
 type Tab = "active" | "opened";
 
@@ -87,8 +99,24 @@ function SortableHeader({
   );
 }
 
+function FollowUpTag({ label, done, overdue }: { label: string; done: boolean; overdue: boolean }) {
+  const variant = done ? "default" : overdue ? "amber" : "secondary";
+  return (
+    <Badge variant={variant} className="gap-1 text-[10px]">
+      {done && <Check className="h-2.5 w-2.5" />}
+      {label}
+    </Badge>
+  );
+}
+
+interface ReadinessInfo {
+  pct: number;
+  token: string;
+}
+
 export function ClientsTable({ initialLocations, userEmail, loginRoster }: ClientsTableProps) {
   const [locations, setLocations] = React.useState<Location[]>(initialLocations);
+  const [readinessByLocation, setReadinessByLocation] = React.useState<Record<string, ReadinessInfo>>({});
   const [tab, setTab] = React.useState<Tab>("active");
   const [search, setSearch] = React.useState("");
   const [clientFilter, setClientFilter] = React.useState<string>("all");
@@ -100,8 +128,11 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Location | undefined>(undefined);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<Location | null>(null);
 
   React.useEffect(() => {
+    refreshReadiness();
     const supabase = createClient();
     const channel = supabase
       .channel("locations-changes")
@@ -109,9 +140,16 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
         refresh();
       })
       .subscribe();
+    const readinessChannel = supabase
+      .channel("readiness-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "readiness" }, () => {
+        refreshReadiness();
+      })
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(readinessChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -120,6 +158,27 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
     const supabase = createClient();
     const { data, error } = await supabase.from("locations").select("*").order("opening_date");
     if (!error && data) setLocations(data);
+  }
+
+  async function refreshReadiness() {
+    const supabase = createClient();
+    const { data, error } = await supabase.from("readiness").select("*");
+    if (error || !data) return;
+    const rows = data as unknown as { location_id: string; pct: number; token: string }[];
+    const map: Record<string, ReadinessInfo> = {};
+    for (const r of rows) {
+      map[r.location_id] = { pct: r.pct, token: r.token };
+    }
+    setReadinessByLocation(map);
+  }
+
+  async function handleOpenReadiness(locationId: string) {
+    try {
+      await openReadinessChecklist(locationId);
+      refreshReadiness();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to open readiness checklist.");
+    }
   }
 
   const clients = React.useMemo(
@@ -221,8 +280,16 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
           />
         ),
         accessorFn: (l) => (tab === "opened" ? l.opened_date : l.opening_date),
-        cell: ({ row }) =>
-          formatDate(tab === "opened" ? row.original.opened_date : row.original.opening_date),
+        cell: ({ row }) => {
+          const dateStr = tab === "opened" ? row.original.opened_date : row.original.opening_date;
+          const relative = formatRelativeDays(dateStr);
+          return (
+            <div>
+              <div>{formatDate(dateStr)}</div>
+              {relative && <div className="text-xs text-muted-foreground">{relative}</div>}
+            </div>
+          );
+        },
       },
       {
         header: ({ column }) => (
@@ -244,6 +311,28 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
             {row.original.notes || "—"}
           </span>
         ),
+      },
+      {
+        id: "readiness",
+        header: "Readiness",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const info = readinessByLocation[row.original.id];
+          return (
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <Progress value={info?.pct ?? 0} className="h-1.5 w-16" />
+              <span className="w-8 text-xs text-muted-foreground">{info?.pct ?? 0}%</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleOpenReadiness(row.original.id)}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          );
+        },
       },
     ];
 
@@ -272,13 +361,14 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
           ),
           accessorFn: (l) => (isFollowUpOverdue(l) ? 1 : 0),
           cell: ({ row }) => {
-            const overdue = isFollowUpOverdue(row.original);
-            return overdue ? (
-              <Badge variant="amber" className="gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                Overdue
-              </Badge>
-            ) : null;
+            const l = row.original;
+            const overdue = isFollowUpOverdue(l);
+            return (
+              <div className="flex gap-1">
+                <FollowUpTag label="Pre" done={l.pre_open_done} overdue={overdue && !l.pre_open_done} />
+                <FollowUpTag label="Post" done={l.post_open_done} overdue={overdue && !l.post_open_done} />
+              </div>
+            );
           },
         }
       );
@@ -319,13 +409,24 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
             >
               Edit
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleting(row.original);
+                setDeleteOpen(true);
+              }}
+            >
+              Delete
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ),
     });
 
     return base;
-  }, [tab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, readinessByLocation]);
 
   const table = useReactTable({
     data: filtered,
@@ -490,6 +591,14 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster }: Clien
         userEmail={userEmail}
         trackerRoster={trackerRoster}
         onSaved={refresh}
+      />
+
+      <DeleteClientDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        location={deleting}
+        userEmail={userEmail}
+        onDeleted={refresh}
       />
     </div>
   );
