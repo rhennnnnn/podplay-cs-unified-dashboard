@@ -48,6 +48,49 @@ export interface Profile {
   created_at: string;
 }
 
+export interface OpsCategory {
+  id: string;
+  name: string;
+  display_order: number;
+  color: string | null;
+  created_at: string;
+}
+
+export interface OpsArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  tags: string[];
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  published: boolean;
+}
+
+export type OpsArticleStub = Omit<OpsArticle, "content">;
+
+export interface OpsArticleChecklistState {
+  user_id: string;
+  article_id: string;
+  checked_indexes: number[];
+  updated_at: string;
+}
+
+export interface OpsArticleFavorite {
+  user_id: string;
+  article_id: string;
+  created_at: string;
+}
+
+export interface OpsArticleView {
+  id: number;
+  user_id: string;
+  article_id: string;
+  viewed_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -73,6 +116,36 @@ export interface Database {
         Row: Profile;
         Insert: Partial<Profile> & { id: string; email: string; first_name: string; last_name: string };
         Update: Partial<Profile>;
+        Relationships: [];
+      };
+      ops_articles: {
+        Row: OpsArticle;
+        Insert: Partial<OpsArticle> & { title: string; category: string; content: string };
+        Update: Partial<OpsArticle>;
+        Relationships: [];
+      };
+      ops_categories: {
+        Row: OpsCategory;
+        Insert: Partial<OpsCategory> & { name: string };
+        Update: Partial<OpsCategory>;
+        Relationships: [];
+      };
+      ops_article_checklist_state: {
+        Row: OpsArticleChecklistState;
+        Insert: Partial<OpsArticleChecklistState> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleChecklistState>;
+        Relationships: [];
+      };
+      ops_article_favorites: {
+        Row: OpsArticleFavorite;
+        Insert: Partial<OpsArticleFavorite> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleFavorite>;
+        Relationships: [];
+      };
+      ops_article_views: {
+        Row: OpsArticleView;
+        Insert: Partial<OpsArticleView> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleView>;
         Relationships: [];
       };
     };
