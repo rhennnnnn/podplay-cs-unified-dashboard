@@ -52,6 +52,7 @@ export interface OpsCategory {
   id: string;
   name: string;
   display_order: number;
+  color: string | null;
   created_at: string;
 }
 

@@ -5,7 +5,7 @@ import { ArrowLeft, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, T
 import { toast } from "sonner";
 
 import type { OpsArticle, OpsArticleStub, OpsCategory } from "@/lib/types";
-import { categoryBadgeClass, countCheckboxes, formatRelativeDate } from "@/lib/ops-guide";
+import { categoryBadgeClass, countCheckboxes, formatRelativeDate, getCategoryColorPreset } from "@/lib/ops-guide";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -254,6 +254,11 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
     return counts;
   }, [articles]);
 
+  const categoryColorByName = React.useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.name, c.color])),
+    [categories]
+  );
+
   const isSearching = searchQuery.length > 0;
   const visibleArticles: (OpsArticleStub | SearchResultItem)[] = isSearching
     ? (searchResults ?? [])
@@ -375,7 +380,10 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                   activeCategory === cat.name ? "bg-accent text-white" : "hover:bg-muted"
                 )}
               >
-                {cat.name}
+                <span className="flex items-center gap-2">
+                  <span className={cn("h-2 w-2 shrink-0 rounded-full", getCategoryColorPreset(cat.color).dot)} />
+                  {cat.name}
+                </span>
                 <span className="text-xs opacity-80">{categoryCounts[cat.name] ?? 0}</span>
               </button>
             ))}
@@ -463,7 +471,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                     className="group cursor-pointer p-3 transition-colors hover:border-accent"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <Badge className={cn("text-xs", categoryBadgeClass(article.category))} variant="secondary">
+                      <Badge className={cn("text-xs", categoryBadgeClass(categoryColorByName[article.category]))} variant="secondary">
                         {article.category}
                       </Badge>
                       <div className="flex gap-1">
@@ -588,7 +596,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge className={cn(categoryBadgeClass(selectedArticle.category))} variant="secondary">
+              <Badge className={cn(categoryBadgeClass(categoryColorByName[selectedArticle.category]))} variant="secondary">
                 {selectedArticle.category}
               </Badge>
               <span>Updated {formatRelativeDate(selectedArticle.updated_at)}</span>

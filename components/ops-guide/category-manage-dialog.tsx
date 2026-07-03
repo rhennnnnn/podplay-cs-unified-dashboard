@@ -5,6 +5,8 @@ import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import type { OpsCategory } from "@/lib/types";
+import { CATEGORY_COLOR_PRESETS, getCategoryColorPreset } from "@/lib/ops-guide";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,13 +36,32 @@ export function CategoryManageDialog({ open, onOpenChange, categories, onCategor
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState("");
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [colorPickerId, setColorPickerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) {
       setNewName("");
       setEditingId(null);
+      setColorPickerId(null);
     }
   }, [open]);
+
+  async function handleColorChange(category: OpsCategory, colorKey: string) {
+    setBusyId(category.id);
+    setColorPickerId(null);
+    try {
+      const json = await fetchJson<{ category: OpsCategory }>(`/api/ops-guide/categories/${category.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: colorKey }),
+      });
+      onCategoriesChanged(categories.map((c) => (c.id === category.id ? json.category : c)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update color.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const sorted = [...categories].sort((a, b) => a.display_order - b.display_order);
 
@@ -143,7 +164,8 @@ export function CategoryManageDialog({ open, onOpenChange, categories, onCategor
 
         <div className="space-y-2">
           {sorted.map((category, idx) => (
-            <div key={category.id} className="flex items-center gap-2 rounded-md border p-2">
+            <div key={category.id} className="rounded-md border p-2">
+            <div className="flex items-center gap-2">
               <div className="flex flex-col">
                 <button
                   disabled={idx === 0 || busyId === category.id}
@@ -160,6 +182,12 @@ export function CategoryManageDialog({ open, onOpenChange, categories, onCategor
                   <ArrowDown className="h-3 w-3" />
                 </button>
               </div>
+
+              <button
+                title="Change color"
+                onClick={() => setColorPickerId(colorPickerId === category.id ? null : category.id)}
+                className={cn("h-4 w-4 shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-card", getCategoryColorPreset(category.color).dot, colorPickerId === category.id ? "ring-foreground/40" : "ring-transparent")}
+              />
 
               {editingId === category.id ? (
                 <Input
@@ -208,6 +236,24 @@ export function CategoryManageDialog({ open, onOpenChange, categories, onCategor
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
+            </div>
+
+            {colorPickerId === category.id && (
+              <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
+                {CATEGORY_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.key}
+                    title={preset.label}
+                    onClick={() => handleColorChange(category, preset.key)}
+                    className={cn(
+                      "h-5 w-5 rounded-full",
+                      preset.dot,
+                      category.color === preset.key && "ring-2 ring-foreground/50 ring-offset-1 ring-offset-card"
+                    )}
+                  />
+                ))}
+              </div>
+            )}
             </div>
           ))}
         </div>

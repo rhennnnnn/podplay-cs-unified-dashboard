@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/permissions";
+import { CATEGORY_COLOR_PRESETS } from "@/lib/ops-guide";
 import type { OpsCategory } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 interface PatchCategoryBody {
   name?: string;
   display_order?: number;
+  color?: string;
 }
 
 // PATCH — rename and/or reorder a category (admin only). Renaming cascades
@@ -52,6 +54,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   if (body.display_order !== undefined) {
     updates.display_order = body.display_order;
+  }
+
+  if (body.color !== undefined) {
+    if (!CATEGORY_COLOR_PRESETS.some((p) => p.key === body.color)) {
+      return NextResponse.json({ error: "Invalid color." }, { status: 400 });
+    }
+    updates.color = body.color;
   }
 
   if (Object.keys(updates).length === 0) {

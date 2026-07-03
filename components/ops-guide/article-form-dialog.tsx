@@ -3,6 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
+import TurndownService from "turndown";
 import { ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,6 +37,25 @@ function hasUnsafeLongLine(content: string): boolean {
   return content.split("\n").some((line) => line.length > MAX_SAFE_LINE_LENGTH);
 }
 
+const turndownService = new TurndownService({ headingStyle: "atx" });
+// Legacy seed articles mark a step as <p class="step"><label><input
+// type="checkbox">...</label>Step text</p> — turndown drops void <input>
+// elements by default (no rule), which would silently lose every checklist
+// item. Convert the whole step paragraph into a GFM task-list line instead
+// so lib/ops-guide.ts's countCheckboxes still finds it after conversion.
+turndownService.addRule("legacyStepCheckbox", {
+  filter: (node) => node.nodeName === "P" && node.classList?.contains("step"),
+  replacement: (content, node) => {
+    const checkbox = (node as HTMLElement).querySelector('input[type="checkbox"]');
+    const checked = checkbox?.hasAttribute("checked") ?? false;
+    return `\n- [${checked ? "x" : " "}] ${content.trim()}\n`;
+  },
+});
+
+function looksLikeHtml(content: string): boolean {
+  return /<\/?(p|div|h[1-6]|ul|ol|li|strong|em|table|span|a)\b/i.test(content);
+}
+
 export interface ArticleDraft {
   title?: string;
   content?: string;
@@ -64,10 +84,11 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
     if (!open) return;
     setError(null);
     if (article) {
+      const content = looksLikeHtml(article.content) ? turndownService.turndown(article.content) : article.content;
       setForm({
         title: article.title,
         category: article.category,
-        content: article.content,
+        content,
         tags: article.tags.join(", "),
         published: article.published,
       });

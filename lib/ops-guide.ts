@@ -1,29 +1,35 @@
-const KNOWN_CATEGORY_COLORS: Record<string, string> = {
-  "Camera Coefficients": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  "Credit Card Terminal Setup": "bg-purple-500/15 text-purple-600 dark:text-purple-400",
-  "IT Troubleshooting Manual": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "Tech Support": "bg-accent/15 text-accent",
-};
+// Tailwind classes must be statically analyzable — a fixed preset palette
+// (rather than an arbitrary hex/dynamic class) is what makes admin-selected
+// category colors actually work with the JIT compiler. `key` is what's
+// stored in ops_categories.color.
+export interface CategoryColorPreset {
+  key: string;
+  label: string;
+  badge: string;
+  dot: string;
+}
 
-const FALLBACK_CATEGORY_COLORS = [
-  "bg-rose-500/15 text-rose-600 dark:text-rose-400",
-  "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
-  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-  "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
-  "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+export const CATEGORY_COLOR_PRESETS: CategoryColorPreset[] = [
+  { key: "slate", label: "Slate", badge: "bg-slate-500/15 text-slate-600 dark:text-slate-400", dot: "bg-slate-500" },
+  { key: "accent", label: "Olive", badge: "bg-accent/15 text-accent", dot: "bg-accent" },
+  { key: "blue", label: "Blue", badge: "bg-blue-500/15 text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
+  { key: "purple", label: "Purple", badge: "bg-purple-500/15 text-purple-600 dark:text-purple-400", dot: "bg-purple-500" },
+  { key: "amber", label: "Amber", badge: "bg-amber-500/15 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
+  { key: "rose", label: "Rose", badge: "bg-rose-500/15 text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
+  { key: "cyan", label: "Cyan", badge: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400", dot: "bg-cyan-500" },
+  { key: "emerald", label: "Emerald", badge: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  { key: "indigo", label: "Indigo", badge: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400", dot: "bg-indigo-500" },
+  { key: "orange", label: "Orange", badge: "bg-orange-500/15 text-orange-600 dark:text-orange-400", dot: "bg-orange-500" },
 ];
 
-// Categories are admin-managed (ops_categories table), so the palette can't
-// be a fixed lookup keyed by a closed set of names. Known legacy categories
-// keep their original colors; any new category gets a stable color derived
-// from a hash of its name so it doesn't change between renders.
-export function categoryBadgeClass(category: string): string {
-  if (KNOWN_CATEGORY_COLORS[category]) return KNOWN_CATEGORY_COLORS[category];
-  let hash = 0;
-  for (let i = 0; i < category.length; i++) {
-    hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
-  }
-  return FALLBACK_CATEGORY_COLORS[hash % FALLBACK_CATEGORY_COLORS.length];
+const DEFAULT_COLOR_PRESET = CATEGORY_COLOR_PRESETS[0];
+
+export function getCategoryColorPreset(colorKey: string | null | undefined): CategoryColorPreset {
+  return CATEGORY_COLOR_PRESETS.find((p) => p.key === colorKey) ?? DEFAULT_COLOR_PRESET;
+}
+
+export function categoryBadgeClass(colorKey: string | null | undefined): string {
+  return getCategoryColorPreset(colorKey).badge;
 }
 
 export function stripHtml(html: string): string {

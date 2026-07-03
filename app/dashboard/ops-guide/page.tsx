@@ -15,7 +15,7 @@ export default async function OpsGuidePage() {
       .eq("published", true)
       .order("category", { ascending: true })
       .order("title", { ascending: true }),
-    admin.from("ops_categories").select("id, name, display_order, created_at").order("display_order", { ascending: true }),
+    admin.from("ops_categories").select("id, name, display_order, color, created_at").order("display_order", { ascending: true }),
   ]);
 
   if (error) {
