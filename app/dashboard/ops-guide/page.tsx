@@ -1,24 +1,27 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getCallerProfile, isAdmin } from "@/lib/permissions";
+import type { OpsArticleStub } from "@/lib/types";
+import { OpsGuideShell } from "@/components/ops-guide/ops-guide-shell";
 
-export default function OpsGuidePage() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">OPS Guide</h1>
-        <p className="text-sm text-muted-foreground">
-          Searchable internal knowledge base for common CS issues and escalation paths.
-        </p>
+export const dynamic = "force-dynamic";
+
+export default async function OpsGuidePage() {
+  const caller = await getCallerProfile();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("ops_articles")
+    .select("id, title, category, tags, created_by, updated_by, created_at, updated_at, published")
+    .eq("published", true)
+    .order("category", { ascending: true })
+    .order("title", { ascending: true });
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+        Failed to load OPS Guide: {error.message}
       </div>
+    );
+  }
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Coming soon</CardTitle>
-          <CardDescription>
-            Troubleshooting articles and escalation paths will be searchable here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
-    </div>
-  );
+  return <OpsGuideShell initialArticles={(data ?? []) as unknown as OpsArticleStub[]} isAdmin={isAdmin(caller)} />;
 }

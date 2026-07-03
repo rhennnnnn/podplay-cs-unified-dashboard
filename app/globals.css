@@ -68,3 +68,41 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hand-written prose styling for OPS Guide article HTML (no typography plugin installed) */
+.ops-article-content h2 {
+  @apply mb-3 mt-8 text-xl font-bold first:mt-0;
+}
+.ops-article-content h3 {
+  @apply mb-2 mt-6 text-lg font-semibold;
+}
+.ops-article-content p {
+  @apply mb-4 text-sm leading-relaxed text-foreground/90;
+}
+.ops-article-content ul {
+  @apply mb-4 ml-5 list-disc space-y-1 text-sm;
+}
+.ops-article-content ol {
+  @apply mb-4 ml-5 list-decimal space-y-1 text-sm;
+}
+.ops-article-content a {
+  @apply text-accent underline underline-offset-2;
+}
+.ops-article-content code {
+  @apply rounded bg-muted px-1.5 py-0.5 font-mono text-xs;
+}
+.ops-article-content pre {
+  @apply mb-4 overflow-x-auto rounded-lg bg-muted p-3 text-xs;
+}
+.ops-article-content pre code {
+  @apply bg-transparent p-0;
+}
+.ops-article-content img {
+  @apply my-4 rounded-lg border;
+}
+.ops-article-content label {
+  @apply cursor-pointer text-sm;
+}
+.ops-article-content input[type="checkbox"] {
+  @apply mr-2 h-4 w-4 accent-accent align-middle;
+}

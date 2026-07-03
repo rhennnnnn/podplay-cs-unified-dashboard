@@ -48,6 +48,30 @@ export interface Profile {
   created_at: string;
 }
 
+export const OPS_ARTICLE_CATEGORIES = [
+  "Camera Coefficients",
+  "Credit Card Terminal Setup",
+  "IT Troubleshooting Manual",
+  "Tech Support",
+] as const;
+
+export type OpsArticleCategory = (typeof OPS_ARTICLE_CATEGORIES)[number];
+
+export interface OpsArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  tags: string[];
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  published: boolean;
+}
+
+export type OpsArticleStub = Omit<OpsArticle, "content">;
+
 export interface Database {
   public: {
     Tables: {
@@ -73,6 +97,12 @@ export interface Database {
         Row: Profile;
         Insert: Partial<Profile> & { id: string; email: string; first_name: string; last_name: string };
         Update: Partial<Profile>;
+        Relationships: [];
+      };
+      ops_articles: {
+        Row: OpsArticle;
+        Insert: Partial<OpsArticle> & { title: string; category: string; content: string };
+        Update: Partial<OpsArticle>;
         Relationships: [];
       };
     };
