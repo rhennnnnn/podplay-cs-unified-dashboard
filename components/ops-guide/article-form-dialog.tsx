@@ -20,6 +20,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { safeUrlTransform } from "@/components/ops-guide/article-content";
+import { ResizableImage } from "@/components/ops-guide/resizable-image";
+import { getImageWidth, setImageWidth } from "@/lib/ops-guide";
+
+const DEFAULT_IMAGE_WIDTH = 400;
 
 const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
 
@@ -86,8 +91,8 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
       const res = await fetch("/api/ops-guide/upload-image", { method: "POST", body: formData });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to upload image.");
-      const markdown = `![${file.name}](${json.url})`;
-      setForm((f) => ({ ...f, content: `${f.content}\n\n${markdown}\n` }));
+      const imageTag = `<img src="${json.url}" alt="${file.name}" width="${DEFAULT_IMAGE_WIDTH}">`;
+      setForm((f) => ({ ...f, content: `${f.content}\n\n${imageTag}\n` }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload image.");
     } finally {
@@ -202,6 +207,22 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
                   onChange={(value) => setForm((f) => ({ ...f, content: value ?? "" }))}
                   height={360}
                   textareaProps={{ placeholder: "## Section title\n\nSteps...\n\n- [ ] Step one" }}
+                  previewOptions={{
+                    urlTransform: safeUrlTransform,
+                    components: {
+                      img: ({ src, alt }) =>
+                        src ? (
+                          <ResizableImage
+                            src={src}
+                            alt={alt}
+                            initialWidth={getImageWidth(form.content, src) ?? DEFAULT_IMAGE_WIDTH}
+                            onResizeEnd={(width) =>
+                              setForm((f) => ({ ...f, content: setImageWidth(f.content, src, width) }))
+                            }
+                          />
+                        ) : null,
+                    },
+                  }}
                 />
               </div>
             )}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import type { OpsArticle, OpsArticleStub, OpsCategory } from "@/lib/types";
@@ -408,124 +408,114 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
         )}
       </aside>
 
-      {/* Center article list */}
-      <section className="w-96 shrink-0 overflow-y-auto rounded-xl border bg-card p-3">
-        {(isSearching ? searching : loadingSpecialList && (activeCategory === FAVORITES_VIEW || activeCategory === RECENT_VIEW)) && (
-          <div className="space-y-3 p-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-lg" />
-            ))}
-          </div>
-        )}
-
-        {isSearching && !searching && visibleArticles.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">No articles match &quot;{searchQuery}&quot;.</p>
-        )}
-
-        {!isSearching && !loadingSpecialList && activeCategory === FAVORITES_VIEW && visibleArticles.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">
-            No favorites yet — star an article to pin it here.
-          </p>
-        )}
-
-        {!isSearching && !loadingSpecialList && activeCategory === RECENT_VIEW && visibleArticles.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">No recently viewed articles yet.</p>
-        )}
-
-        {!isSearching && activeCategory !== FAVORITES_VIEW && activeCategory !== RECENT_VIEW && visibleArticles.length === 0 && (
-          <div className="p-4 text-sm text-muted-foreground">
-            No articles in this category yet.
-            {isAdmin && (
-              <button
-                className="ml-1 text-accent underline"
-                onClick={() => {
-                  setFormArticle(null);
-                  setFormDraft(null);
-                  setFormOpen(true);
-                }}
-              >
-                + Add Article
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {visibleArticles.map((article) => {
-            const isSelected = article.id === selectedId;
-            const isFavorited = favoriteIds.has(article.id);
-            const excerptText = "excerpt" in article ? article.excerpt : "";
-            return (
-              <Card
-                key={article.id}
-                onClick={() => handleSelect(article.id)}
-                className={cn(
-                  "group cursor-pointer p-3 transition-colors hover:border-accent",
-                  isSelected && "border-accent bg-accent/10"
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <Badge className={cn("text-xs", categoryBadgeClass(article.category))} variant="secondary">
-                    {article.category}
-                  </Badge>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite(article.id);
-                      }}
-                      className={cn(
-                        "rounded p-1 hover:bg-muted",
-                        isFavorited ? "text-amber-500" : "opacity-0 group-hover:opacity-100"
-                      )}
-                    >
-                      <Star className="h-3.5 w-3.5" fill={isFavorited ? "currentColor" : "none"} />
-                    </button>
-                    {isAdmin && (
-                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetchJson<{ article: OpsArticle }>(`/api/ops-guide/${article.id}`).then((json) => {
-                              setFormArticle(json.article);
-                              setFormDraft(null);
-                              setFormOpen(true);
-                            });
-                          }}
-                          className="rounded p-1 hover:bg-muted"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteTarget(article);
-                            setDeleteOpen(true);
-                          }}
-                          className="rounded p-1 hover:bg-muted hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <p className="mt-1.5 line-clamp-1 text-sm font-semibold">{article.title}</p>
-                {excerptText && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{excerptText}</p>}
-                <p className="mt-1.5 text-xs text-muted-foreground">{formatRelativeDate(article.updated_at)}</p>
-              </Card>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Right reader */}
-      <section className="flex-1 overflow-y-auto rounded-xl border bg-card p-6">
+      {/* Main panel — article list, or the opened article full-width with a Back button */}
+      <section className="flex-1 overflow-y-auto rounded-xl border bg-card p-3">
         {!selectedId && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <BookOpen className="h-10 w-10" />
-            <p className="text-sm">Select an article to read</p>
-          </div>
+          <>
+            {(isSearching ? searching : loadingSpecialList && (activeCategory === FAVORITES_VIEW || activeCategory === RECENT_VIEW)) && (
+              <div className="grid grid-cols-1 gap-3 p-1 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-28 w-full rounded-lg" />
+                ))}
+              </div>
+            )}
+
+            {isSearching && !searching && visibleArticles.length === 0 && (
+              <p className="p-4 text-sm text-muted-foreground">No articles match &quot;{searchQuery}&quot;.</p>
+            )}
+
+            {!isSearching && !loadingSpecialList && activeCategory === FAVORITES_VIEW && visibleArticles.length === 0 && (
+              <p className="p-4 text-sm text-muted-foreground">
+                No favorites yet — star an article to pin it here.
+              </p>
+            )}
+
+            {!isSearching && !loadingSpecialList && activeCategory === RECENT_VIEW && visibleArticles.length === 0 && (
+              <p className="p-4 text-sm text-muted-foreground">No recently viewed articles yet.</p>
+            )}
+
+            {!isSearching && activeCategory !== FAVORITES_VIEW && activeCategory !== RECENT_VIEW && visibleArticles.length === 0 && (
+              <div className="p-4 text-sm text-muted-foreground">
+                No articles in this category yet.
+                {isAdmin && (
+                  <button
+                    className="ml-1 text-accent underline"
+                    onClick={() => {
+                      setFormArticle(null);
+                      setFormDraft(null);
+                      setFormOpen(true);
+                    }}
+                  >
+                    + Add Article
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleArticles.map((article) => {
+                const isFavorited = favoriteIds.has(article.id);
+                const excerptText = "excerpt" in article ? article.excerpt : "";
+                return (
+                  <Card
+                    key={article.id}
+                    onClick={() => handleSelect(article.id)}
+                    className="group cursor-pointer p-3 transition-colors hover:border-accent"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <Badge className={cn("text-xs", categoryBadgeClass(article.category))} variant="secondary">
+                        {article.category}
+                      </Badge>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(article.id);
+                          }}
+                          className={cn(
+                            "rounded p-1 hover:bg-muted",
+                            isFavorited ? "text-amber-500" : "opacity-0 group-hover:opacity-100"
+                          )}
+                        >
+                          <Star className="h-3.5 w-3.5" fill={isFavorited ? "currentColor" : "none"} />
+                        </button>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                fetchJson<{ article: OpsArticle }>(`/api/ops-guide/${article.id}`).then((json) => {
+                                  setFormArticle(json.article);
+                                  setFormDraft(null);
+                                  setFormOpen(true);
+                                });
+                              }}
+                              className="rounded p-1 hover:bg-muted"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(article);
+                                setDeleteOpen(true);
+                              }}
+                              className="rounded p-1 hover:bg-muted hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-1.5 line-clamp-1 text-sm font-semibold">{article.title}</p>
+                    {excerptText && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{excerptText}</p>}
+                    <p className="mt-1.5 text-xs text-muted-foreground">{formatRelativeDate(article.updated_at)}</p>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
         )}
 
         {selectedId && loadingArticle && (
@@ -537,7 +527,14 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
         )}
 
         {selectedId && !loadingArticle && selectedArticle && (
-          <div>
+          <div className="mx-auto max-w-3xl p-3">
+            <button
+              onClick={() => setSelectedId(null)}
+              className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Articles
+            </button>
             <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
               <span>{selectedArticle.category}</span>
               <span>/</span>

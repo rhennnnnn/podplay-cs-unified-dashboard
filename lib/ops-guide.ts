@@ -45,6 +45,40 @@ export function countCheckboxes(content: string): number {
   return matches?.length ?? 0;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Reads the current width="N" on an <img> tag with this exact src, if any.
+export function getImageWidth(content: string, src: string): number | null {
+  const escaped = escapeRegex(src);
+  const match = content.match(new RegExp(`<img[^>]*src="${escaped}"[^>]*width="(\\d+)"`, "i"));
+  return match ? Number(match[1]) : null;
+}
+
+// Sets width="N" on an <img> tag matching this src — converts a plain
+// Markdown ![alt](src) image to an HTML <img> tag the first time it's
+// resized (Markdown image syntax has no size attribute).
+export function setImageWidth(content: string, src: string, width: number): string {
+  const escaped = escapeRegex(src);
+  const roundedWidth = Math.round(width);
+
+  const htmlImgRegex = new RegExp(`<img([^>]*)src="${escaped}"([^>]*)>`, "i");
+  if (htmlImgRegex.test(content)) {
+    return content.replace(htmlImgRegex, (_match, before: string, after: string) => {
+      const rest = `${before} ${after}`.replace(/\s*width="\d+"/i, "").trim();
+      return `<img ${rest ? `${rest} ` : ""}src="${src}" width="${roundedWidth}">`;
+    });
+  }
+
+  const mdImgRegex = new RegExp(`!\\[([^\\]]*)\\]\\(${escaped}\\)`);
+  if (mdImgRegex.test(content)) {
+    return content.replace(mdImgRegex, (_match, alt: string) => `<img src="${src}" alt="${alt}" width="${roundedWidth}">`);
+  }
+
+  return content;
+}
+
 export function formatRelativeDate(dateStr: string): string {
   const target = new Date(dateStr);
   const diffMs = Date.now() - target.getTime();
