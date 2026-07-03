@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCallerProfile, isAdmin } from "@/lib/permissions";
 import type { OpsArticleStub, OpsCategory } from "@/lib/types";
@@ -27,10 +29,12 @@ export default async function OpsGuidePage() {
   }
 
   return (
-    <OpsGuideShell
-      initialArticles={(data ?? []) as unknown as OpsArticleStub[]}
-      initialCategories={(categoriesData ?? []) as unknown as OpsCategory[]}
-      isAdmin={isAdmin(caller)}
-    />
+    <Suspense>
+      <OpsGuideShell
+        initialArticles={(data ?? []) as unknown as OpsArticleStub[]}
+        initialCategories={(categoriesData ?? []) as unknown as OpsCategory[]}
+        isAdmin={isAdmin(caller)}
+      />
+    </Suspense>
   );
 }

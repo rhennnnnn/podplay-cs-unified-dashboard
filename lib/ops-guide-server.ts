@@ -1,9 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 
+export interface MostViewedArticle {
+  id: string;
+  title: string;
+  count: number;
+}
+
 export interface OpsGuideOverviewStats {
   totalArticles: number;
-  mostViewedTitle: string | null;
-  mostViewedCount: number;
+  mostViewed: MostViewedArticle[];
 }
 
 // Server-only (uses the cookie-scoped Supabase client) — kept out of
@@ -22,20 +27,19 @@ export async function getOpsGuideOverviewStats(): Promise<OpsGuideOverviewStats>
     tally.set(view.article_id, (tally.get(view.article_id) ?? 0) + 1);
   }
 
-  let topId: string | null = null;
-  let topCount = 0;
-  for (const [id, count] of Array.from(tally.entries())) {
-    if (count > topCount) {
-      topId = id;
-      topCount = count;
-    }
+  const topIds = Array.from(tally.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([id]) => id);
+
+  let mostViewed: MostViewedArticle[] = [];
+  if (topIds.length > 0) {
+    const { data: articles } = await supabase.from("ops_articles").select("id, title").in("id", topIds);
+    const titleById = new Map(((articles ?? []) as { id: string; title: string }[]).map((a) => [a.id, a.title]));
+    mostViewed = topIds
+      .map((id) => ({ id, title: titleById.get(id), count: tally.get(id) ?? 0 }))
+      .filter((a): a is MostViewedArticle => Boolean(a.title));
   }
 
-  let mostViewedTitle: string | null = null;
-  if (topId) {
-    const { data } = await supabase.from("ops_articles").select("title").eq("id", topId).maybeSingle();
-    mostViewedTitle = (data as { title: string } | null)?.title ?? null;
-  }
-
-  return { totalArticles: totalArticles ?? 0, mostViewedTitle, mostViewedCount: topCount };
+  return { totalArticles: totalArticles ?? 0, mostViewed };
 }

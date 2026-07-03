@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,12 +14,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArticleFormDialog, type ArticleDraft } from "@/components/ops-guide/article-form-dialog";
+import type { ArticleDraft } from "@/components/ops-guide/article-form-dialog";
 import { ArticleContent } from "@/components/ops-guide/article-content";
-import { CategoryManageDialog } from "@/components/ops-guide/category-manage-dialog";
-import { DeleteArticleDialog } from "@/components/ops-guide/delete-article-dialog";
-import { ImportArticleDialog } from "@/components/ops-guide/import-article-dialog";
 import type { SearchResultItem } from "@/components/ops-guide/ops-guide-types";
+
+// Admin-only dialogs are code-split out of the bundle every non-admin user
+// downloads — ArticleFormDialog alone pulls in the Markdown editor, turndown,
+// and their transitive deps. Regular CSAs never load any of this.
+const ArticleFormDialog = dynamic(() =>
+  import("@/components/ops-guide/article-form-dialog").then((m) => m.ArticleFormDialog)
+);
+const CategoryManageDialog = dynamic(() =>
+  import("@/components/ops-guide/category-manage-dialog").then((m) => m.CategoryManageDialog)
+);
+const DeleteArticleDialog = dynamic(() =>
+  import("@/components/ops-guide/delete-article-dialog").then((m) => m.DeleteArticleDialog)
+);
+const ImportArticleDialog = dynamic(() =>
+  import("@/components/ops-guide/import-article-dialog").then((m) => m.ImportArticleDialog)
+);
 
 const FAVORITES_VIEW = "__favorites__";
 const RECENT_VIEW = "__recent__";
@@ -42,6 +57,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: OpsGuideShellProps) {
+  const searchParams = useSearchParams();
   const [articles, setArticles] = React.useState<OpsArticleStub[]>(initialArticles);
   const [categories, setCategories] = React.useState<OpsCategory[]>(initialCategories);
   const [activeCategory, setActiveCategory] = React.useState<string>("All");
@@ -56,7 +72,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
   const [recentArticles, setRecentArticles] = React.useState<OpsArticleStub[] | null>(null);
   const [loadingSpecialList, setLoadingSpecialList] = React.useState(false);
 
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(() => searchParams.get("article"));
   const [selectedArticle, setSelectedArticle] = React.useState<OpsArticle | null>(null);
   const [loadingArticle, setLoadingArticle] = React.useState(false);
   const [checkedSteps, setCheckedSteps] = React.useState<Record<number, boolean>>({});
@@ -690,35 +706,39 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
         )}
       </section>
 
-      <ArticleFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        article={formArticle}
-        categories={categories}
-        draft={formDraft}
-        onSaved={handleArticleSaved}
-      />
-      <DeleteArticleDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        article={deleteTarget}
-        onDeleted={handleArticleDeleted}
-      />
-      <CategoryManageDialog
-        open={categoryDialogOpen}
-        onOpenChange={setCategoryDialogOpen}
-        categories={categories}
-        onCategoriesChanged={setCategories}
-      />
-      <ImportArticleDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={(draft) => {
-          setFormArticle(null);
-          setFormDraft(draft);
-          setFormOpen(true);
-        }}
-      />
+      {isAdmin && (
+        <>
+          <ArticleFormDialog
+            open={formOpen}
+            onOpenChange={setFormOpen}
+            article={formArticle}
+            categories={categories}
+            draft={formDraft}
+            onSaved={handleArticleSaved}
+          />
+          <DeleteArticleDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            article={deleteTarget}
+            onDeleted={handleArticleDeleted}
+          />
+          <CategoryManageDialog
+            open={categoryDialogOpen}
+            onOpenChange={setCategoryDialogOpen}
+            categories={categories}
+            onCategoriesChanged={setCategories}
+          />
+          <ImportArticleDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            onImported={(draft) => {
+              setFormArticle(null);
+              setFormDraft(draft);
+              setFormOpen(true);
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

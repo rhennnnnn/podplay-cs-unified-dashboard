@@ -134,11 +134,22 @@ export default async function OverviewPage() {
               <Flame className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {opsGuideStats.mostViewedTitle ? (
-                <>
-                  <div className="truncate text-lg font-bold">{opsGuideStats.mostViewedTitle}</div>
-                  <p className="text-xs text-muted-foreground">{opsGuideStats.mostViewedCount} views</p>
-                </>
+              {opsGuideStats.mostViewed.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {opsGuideStats.mostViewed.map((article, i) => (
+                    <li key={article.id}>
+                      <Link
+                        href={`/dashboard/ops-guide?article=${article.id}`}
+                        className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted"
+                      >
+                        <span className="truncate">
+                          {i + 1}. {article.title}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{article.count}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <div className="text-2xl font-bold text-muted-foreground">—</div>
               )}
