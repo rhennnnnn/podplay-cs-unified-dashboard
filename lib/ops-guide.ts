@@ -85,6 +85,37 @@ export function setImageWidth(content: string, src: string, width: number): stri
   return content;
 }
 
+const DATA_URI_REGEX = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g;
+
+export type EmbeddedImageMap = Record<string, string>;
+
+// Embedded base64 images are what makes the Markdown editor freeze (a
+// single-line data: URI can be hundreds of KB). Replace each with a short
+// placeholder token before handing content to the editor, and swap them
+// back on save — the editor never sees a long line, so the rich editor can
+// stay on for every article instead of falling back to a plain textarea.
+export function extractEmbeddedImages(content: string): { content: string; images: EmbeddedImageMap } {
+  const images: EmbeddedImageMap = {};
+  let counter = 0;
+  const shortened = content.replace(DATA_URI_REGEX, (match) => {
+    counter += 1;
+    // Must look like a relative path, not a custom URI scheme — safeUrlTransform
+    // (article-content.tsx) blocks unrecognized schemes, and "foo://" parses as one.
+    const placeholder = `/__ops-embedded-image__/${counter}`;
+    images[placeholder] = match;
+    return placeholder;
+  });
+  return { content: shortened, images };
+}
+
+export function restoreEmbeddedImages(content: string, images: EmbeddedImageMap): string {
+  let restored = content;
+  for (const [placeholder, dataUri] of Object.entries(images)) {
+    restored = restored.split(placeholder).join(dataUri);
+  }
+  return restored;
+}
+
 export function formatRelativeDate(dateStr: string): string {
   const target = new Date(dateStr);
   const diffMs = Date.now() - target.getTime();

@@ -49,6 +49,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<SearchResultItem[] | null>(null);
   const [searching, setSearching] = React.useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = React.useState(false);
 
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(new Set());
   const [favoriteArticles, setFavoriteArticles] = React.useState<OpsArticleStub[] | null>(null);
@@ -275,6 +276,13 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
     setSelectedId(id);
   }
 
+  // Clicking any sidebar nav entry while an article is open acts as "back
+  // to the list" and switches straight to the clicked view/category.
+  function selectCategory(name: string) {
+    setSelectedId(null);
+    setActiveCategory(name);
+  }
+
   function handleArticleSaved(article: OpsArticle) {
     setArticles((prev) => {
       const stub: OpsArticleStub = {
@@ -328,14 +336,43 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
+            onFocus={() => setSearchDropdownOpen(true)}
+            onBlur={() => setSearchDropdownOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && searchResults && searchResults.length > 0) {
+                handleSelect(searchResults[0].id);
+                setSearchDropdownOpen(false);
+                (e.target as HTMLInputElement).blur();
+              }
+              if (e.key === "Escape") setSearchDropdownOpen(false);
+            }}
             placeholder="Search articles…"
             className="pl-8"
           />
+          {searchDropdownOpen && searchQuery && (searchResults?.length ?? 0) > 0 && (
+            <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-lg">
+              {searchResults!.slice(0, 6).map((result) => (
+                <button
+                  key={result.id}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(result.id);
+                    setSearchDropdownOpen(false);
+                    setSearchInput("");
+                  }}
+                  className="flex w-full flex-col items-start gap-0.5 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                >
+                  <span className="line-clamp-1 font-medium">{result.title}</span>
+                  <span className="text-xs text-muted-foreground">{result.category}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <nav className="flex flex-1 flex-col gap-1">
           <button
-            onClick={() => setActiveCategory(FAVORITES_VIEW)}
+            onClick={() => selectCategory(FAVORITES_VIEW)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
               activeCategory === FAVORITES_VIEW ? "bg-accent text-white" : "hover:bg-muted"
@@ -346,7 +383,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
             <span className="ml-auto text-xs opacity-80">{favoriteIds.size}</span>
           </button>
           <button
-            onClick={() => setActiveCategory(RECENT_VIEW)}
+            onClick={() => selectCategory(RECENT_VIEW)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
               activeCategory === RECENT_VIEW ? "bg-accent text-white" : "hover:bg-muted"
@@ -359,7 +396,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
           <div className="my-1 border-t" />
 
           <button
-            onClick={() => setActiveCategory("All")}
+            onClick={() => selectCategory("All")}
             className={cn(
               "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
               activeCategory === "All" ? "bg-accent text-white" : "hover:bg-muted"
@@ -374,7 +411,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
             .map((cat) => (
               <button
                 key={cat.id}
-                onClick={() => setActiveCategory(cat.name)}
+                onClick={() => selectCategory(cat.name)}
                 className={cn(
                   "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
                   activeCategory === cat.name ? "bg-accent text-white" : "hover:bg-muted"

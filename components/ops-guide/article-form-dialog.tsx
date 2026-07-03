@@ -20,22 +20,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { safeUrlTransform } from "@/components/ops-guide/article-content";
-import { ResizableImage } from "@/components/ops-guide/resizable-image";
-import { getImageWidth, setImageWidth } from "@/lib/ops-guide";
+import { extractEmbeddedImages, restoreEmbeddedImages, type EmbeddedImageMap } from "@/lib/ops-guide";
 
 const DEFAULT_IMAGE_WIDTH = 400;
 
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
-
-// CodeMirror (which MDEditor wraps) freezes the tab on a single very long
-// line — legacy articles can embed a base64 image inline as one huge line.
-// Fall back to a plain textarea for those instead of hanging the browser.
-const MAX_SAFE_LINE_LENGTH = 5000;
-function hasUnsafeLongLine(content: string): boolean {
-  return content.split("\n").some((line) => line.length > MAX_SAFE_LINE_LENGTH);
-}
+// The entire @uiw/react-md-editor surface (component + commands) lives in
+// this module and is only ever loaded client-side — the package touches
+// browser globals at import time and would break SSR otherwise.
+const MarkdownEditor = dynamic(() => import("@/components/ops-guide/markdown-editor"), { ssr: false });
 
 const turndownService = new TurndownService({ headingStyle: "atx" });
 // Legacy seed articles mark a step as <p class="step"><label><input
@@ -79,12 +71,18 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
   const [uploading, setUploading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // Placeholder token -> real base64 data URI, for the article currently
+  // open. Populated when a legacy article with embedded images loads, and
+  // spliced back in right before save.
+  const embeddedImagesRef = React.useRef<EmbeddedImageMap>({});
 
   React.useEffect(() => {
     if (!open) return;
     setError(null);
     if (article) {
-      const content = looksLikeHtml(article.content) ? turndownService.turndown(article.content) : article.content;
+      const converted = looksLikeHtml(article.content) ? turndownService.turndown(article.content) : article.content;
+      const { content, images } = extractEmbeddedImages(converted);
+      embeddedImagesRef.current = images;
       setForm({
         title: article.title,
         category: article.category,
@@ -93,6 +91,7 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
         published: article.published,
       });
     } else {
+      embeddedImagesRef.current = {};
       setForm({
         ...EMPTY_FORM,
         title: draft?.title ?? "",
@@ -102,7 +101,10 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
   }, [open, article, draft]);
 
   const isEdit = Boolean(article);
-  const useSimpleEditor = React.useMemo(() => hasUnsafeLongLine(form.content), [form.content]);
+
+  function resolveImageSrc(src: string): string {
+    return embeddedImagesRef.current[src] ?? src;
+  }
 
   async function handleImageUpload(file: File) {
     setUploading(true);
@@ -130,10 +132,11 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
 
     setSaving(true);
     try {
+      const content = restoreEmbeddedImages(form.content.trim(), embeddedImagesRef.current);
       const body = {
         title: form.title.trim(),
         category: form.category,
-        content: form.content.trim(),
+        content,
         tags: form.tags
           .split(",")
           .map((t) => t.trim())
@@ -161,7 +164,7 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Article" : "New Article"}</DialogTitle>
           <DialogDescription>
@@ -169,31 +172,33 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="article-title">Title</Label>
-            <Input
-              id="article-title"
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              placeholder="e.g. Camera Won't Power On"
-            />
-          </div>
+        <div className="flex flex-1 flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="article-title">Title</Label>
+              <Input
+                id="article-title"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Camera Won't Power On"
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="article-category">Category</Label>
-            <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
-              <SelectTrigger id="article-category">
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <Label htmlFor="article-category">Category</Label>
+              <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                <SelectTrigger id="article-category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -206,69 +211,40 @@ export function ArticleFormDialog({ open, onOpenChange, article, categories, dra
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Content (Markdown)</Label>
-            {useSimpleEditor ? (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  This article has a large embedded image — using the plain text editor to avoid slowing down the
-                  browser.
-                </p>
-                <Textarea
-                  value={form.content}
-                  onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                  className="min-h-[300px] font-mono text-sm"
-                  placeholder="## Section title&#10;&#10;Steps...&#10;&#10;- [ ] Step one"
-                />
-              </>
-            ) : (
-              <div data-color-mode={resolvedTheme === "light" ? "light" : "dark"}>
-                <MDEditor
-                  value={form.content}
-                  onChange={(value) => setForm((f) => ({ ...f, content: value ?? "" }))}
-                  height={360}
-                  textareaProps={{ placeholder: "## Section title\n\nSteps...\n\n- [ ] Step one" }}
-                  previewOptions={{
-                    urlTransform: safeUrlTransform,
-                    components: {
-                      img: ({ src, alt }) =>
-                        src ? (
-                          <ResizableImage
-                            src={src}
-                            alt={alt}
-                            initialWidth={getImageWidth(form.content, src) ?? DEFAULT_IMAGE_WIDTH}
-                            onResizeEnd={(width) =>
-                              setForm((f) => ({ ...f, content: setImageWidth(f.content, src, width) }))
-                            }
-                          />
-                        ) : null,
-                    },
-                  }}
-                />
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleImageUpload(file);
-                e.target.value = "";
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ImagePlus className="h-3.5 w-3.5" />
-              {uploading ? "Uploading…" : "Insert Image"}
-            </Button>
+          <div className="flex flex-1 flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Content (Markdown)</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageUpload(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                {uploading ? "Uploading…" : "Insert Image"}
+              </Button>
+            </div>
+            <div className="flex-1">
+              <MarkdownEditor
+                value={form.content}
+                onChange={(content) => setForm((f) => ({ ...f, content }))}
+                colorMode={resolvedTheme === "light" ? "light" : "dark"}
+                resolveImageSrc={resolveImageSrc}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
