@@ -53,9 +53,34 @@ export async function GET(request: NextRequest) {
   }
 
   // Upstream Supabase typing defect collapses chained query builders to `never`.
-  const rows = (data ?? []) as unknown as OpsArticle[];
+  let rows = (data ?? []) as unknown as OpsArticle[];
 
-  const articles = rows.map((article) => ({
+  // websearch_to_tsquery is conservative on very short/typo/partial queries —
+  // fall back to a plain substring match so those still return something.
+  if (rows.length === 0) {
+    let fallback = admin
+      .from("ops_articles")
+      .select("id, title, category, content, tags, created_by, updated_by, created_at, updated_at, published")
+      .eq("published", true)
+      .or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+    if (category) {
+      fallback = fallback.eq("category", category);
+    }
+    const { data: fallbackData } = await fallback;
+    rows = (fallbackData ?? []) as unknown as OpsArticle[];
+  }
+
+  // supabase-js can't ORDER BY ts_rank against the weighted search_vector, so
+  // title matches are promoted here instead — this is what actually makes
+  // the "title outranks body" weighting meaningful to the user.
+  const lowerQ = q.toLowerCase();
+  const sorted = [...rows].sort((a, b) => {
+    const aTitle = a.title.toLowerCase().includes(lowerQ) ? 0 : 1;
+    const bTitle = b.title.toLowerCase().includes(lowerQ) ? 0 : 1;
+    return aTitle - bTitle;
+  });
+
+  const articles = sorted.map((article) => ({
     id: article.id,
     title: article.title,
     category: article.category,

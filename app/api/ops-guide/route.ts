@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCallerProfile, requireAdmin } from "@/lib/permissions";
-import { OPS_ARTICLE_CATEGORIES } from "@/lib/types";
 import type { OpsArticle } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -56,11 +55,16 @@ export async function POST(request: NextRequest) {
   if (!title || !content) {
     return NextResponse.json({ error: "Title and content are required." }, { status: 400 });
   }
-  if (!category || !OPS_ARTICLE_CATEGORIES.includes(category as (typeof OPS_ARTICLE_CATEGORIES)[number])) {
-    return NextResponse.json({ error: "Category must be one of the four OPS Guide categories." }, { status: 400 });
+  if (!category) {
+    return NextResponse.json({ error: "Category is required." }, { status: 400 });
   }
 
   const admin = createAdminClient();
+  const { data: categoryRow } = await admin.from("ops_categories").select("id").eq("name", category).maybeSingle();
+  if (!categoryRow) {
+    return NextResponse.json({ error: "Category not found." }, { status: 400 });
+  }
+
   const payload: Partial<OpsArticle> = {
     title,
     category,

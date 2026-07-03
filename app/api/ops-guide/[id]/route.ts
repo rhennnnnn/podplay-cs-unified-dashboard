@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCallerProfile, requireAdmin } from "@/lib/permissions";
-import { OPS_ARTICLE_CATEGORIES } from "@/lib/types";
 import type { OpsArticle } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +21,12 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   if (!data) {
     return NextResponse.json({ error: "Article not found." }, { status: 404 });
   }
+
+  // Fire-and-forget — never let a view-log failure break the article read.
+  admin
+    .from("ops_article_views")
+    .insert({ user_id: caller.id, article_id: params.id } as never)
+    .then(() => {});
 
   return NextResponse.json({ article: data });
 }
@@ -44,9 +49,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const body = (await request.json()) as PatchArticleBody;
+  const admin = createAdminClient();
 
-  if (body.category !== undefined && !OPS_ARTICLE_CATEGORIES.includes(body.category as (typeof OPS_ARTICLE_CATEGORIES)[number])) {
-    return NextResponse.json({ error: "Category must be one of the four OPS Guide categories." }, { status: 400 });
+  if (body.category !== undefined) {
+    const { data: categoryRow } = await admin
+      .from("ops_categories")
+      .select("id")
+      .eq("name", body.category)
+      .maybeSingle();
+    if (!categoryRow) {
+      return NextResponse.json({ error: "Category not found." }, { status: 400 });
+    }
   }
   if (body.title !== undefined && !body.title.trim()) {
     return NextResponse.json({ error: "Title cannot be empty." }, { status: 400 });
@@ -62,7 +75,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (body.tags !== undefined) updates.tags = body.tags;
   if (body.published !== undefined) updates.published = body.published;
 
-  const admin = createAdminClient();
   const { data, error } = await admin
     .from("ops_articles")
     .update(updates as never)

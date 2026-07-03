@@ -1,24 +1,37 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Copy, Pencil, Plus, Search, Trash2, Wrench } from "lucide-react";
+import { BookOpen, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
-import { OPS_ARTICLE_CATEGORIES, type OpsArticle, type OpsArticleStub } from "@/lib/types";
-import { categoryBadgeClass, extractTocAndAnnotate, formatRelativeDate } from "@/lib/ops-guide";
+import type { OpsArticle, OpsArticleStub, OpsCategory } from "@/lib/types";
+import { categoryBadgeClass, countCheckboxes, formatRelativeDate } from "@/lib/ops-guide";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArticleFormDialog } from "@/components/ops-guide/article-form-dialog";
+import { ArticleFormDialog, type ArticleDraft } from "@/components/ops-guide/article-form-dialog";
+import { ArticleContent } from "@/components/ops-guide/article-content";
+import { CategoryManageDialog } from "@/components/ops-guide/category-manage-dialog";
 import { DeleteArticleDialog } from "@/components/ops-guide/delete-article-dialog";
+import { ImportArticleDialog } from "@/components/ops-guide/import-article-dialog";
 import type { SearchResultItem } from "@/components/ops-guide/ops-guide-types";
+
+const FAVORITES_VIEW = "__favorites__";
+const RECENT_VIEW = "__recent__";
 
 interface OpsGuideShellProps {
   initialArticles: OpsArticleStub[];
+  initialCategories: OpsCategory[];
   isAdmin: boolean;
+}
+
+interface TocEntry {
+  id: string;
+  text: string;
+  level: 2 | 3;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -28,23 +41,87 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return json as T;
 }
 
-export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) {
+export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: OpsGuideShellProps) {
   const [articles, setArticles] = React.useState<OpsArticleStub[]>(initialArticles);
+  const [categories, setCategories] = React.useState<OpsCategory[]>(initialCategories);
   const [activeCategory, setActiveCategory] = React.useState<string>("All");
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<SearchResultItem[] | null>(null);
   const [searching, setSearching] = React.useState(false);
 
+  const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(new Set());
+  const [favoriteArticles, setFavoriteArticles] = React.useState<OpsArticleStub[] | null>(null);
+  const [recentArticles, setRecentArticles] = React.useState<OpsArticleStub[] | null>(null);
+  const [loadingSpecialList, setLoadingSpecialList] = React.useState(false);
+
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = React.useState<OpsArticle | null>(null);
   const [loadingArticle, setLoadingArticle] = React.useState(false);
   const [checkedSteps, setCheckedSteps] = React.useState<Record<number, boolean>>({});
+  const checkedStepsRef = React.useRef<Record<number, boolean>>({});
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [toc, setToc] = React.useState<TocEntry[]>([]);
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [formArticle, setFormArticle] = React.useState<OpsArticle | null>(null);
+  const [formDraft, setFormDraft] = React.useState<ArticleDraft | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<OpsArticleStub | null>(null);
+  const [categoryDialogOpen, setCategoryDialogOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+
+  // Load the caller's favorite ids once on mount (star state applies across every view).
+  React.useEffect(() => {
+    fetchJson<{ articles: OpsArticleStub[] }>("/api/ops-guide/favorites")
+      .then((json) => setFavoriteIds(new Set(json.articles.map((a) => a.id))))
+      .catch(() => {});
+  }, []);
+
+  const loadFavorites = React.useCallback(() => {
+    setLoadingSpecialList(true);
+    fetchJson<{ articles: OpsArticleStub[] }>("/api/ops-guide/favorites")
+      .then((json) => {
+        setFavoriteArticles(json.articles);
+        setFavoriteIds(new Set(json.articles.map((a) => a.id)));
+      })
+      .catch(() => toast.error("Failed to load favorites."))
+      .finally(() => setLoadingSpecialList(false));
+  }, []);
+
+  React.useEffect(() => {
+    if (activeCategory === FAVORITES_VIEW) {
+      loadFavorites();
+    } else if (activeCategory === RECENT_VIEW) {
+      setLoadingSpecialList(true);
+      fetchJson<{ articles: OpsArticleStub[] }>("/api/ops-guide/recent")
+        .then((json) => setRecentArticles(json.articles))
+        .catch(() => toast.error("Failed to load recent articles."))
+        .finally(() => setLoadingSpecialList(false));
+    }
+  }, [activeCategory, loadFavorites]);
+
+  async function toggleFavorite(articleId: string) {
+    const isFav = favoriteIds.has(articleId);
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (isFav) next.delete(articleId);
+      else next.add(articleId);
+      return next;
+    });
+    try {
+      await fetch(`/api/ops-guide/${articleId}/favorite`, { method: isFav ? "DELETE" : "POST" });
+      if (activeCategory === FAVORITES_VIEW) loadFavorites();
+    } catch {
+      toast.error("Failed to update favorite.");
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.add(articleId);
+        else next.delete(articleId);
+        return next;
+      });
+    }
+  }
 
   // Debounce search input 300ms.
   React.useEffect(() => {
@@ -60,7 +137,9 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
     let cancelled = false;
     setSearching(true);
     const params = new URLSearchParams({ q: searchQuery });
-    if (activeCategory !== "All") params.set("category", activeCategory);
+    if (activeCategory !== "All" && activeCategory !== FAVORITES_VIEW && activeCategory !== RECENT_VIEW) {
+      params.set("category", activeCategory);
+    }
     fetchJson<{ articles: SearchResultItem[] }>(`/api/ops-guide/search?${params}`)
       .then((json) => {
         if (!cancelled) setSearchResults(json.articles);
@@ -76,6 +155,7 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
     };
   }, [searchQuery, activeCategory]);
 
+  // Load the selected article.
   React.useEffect(() => {
     if (!selectedId) {
       setSelectedArticle(null);
@@ -83,7 +163,6 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
     }
     let cancelled = false;
     setLoadingArticle(true);
-    setCheckedSteps({});
     fetchJson<{ article: OpsArticle }>(`/api/ops-guide/${selectedId}`)
       .then((json) => {
         if (!cancelled) setSelectedArticle(json.article);
@@ -99,6 +178,74 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
     };
   }, [selectedId]);
 
+  // Reset checklist state immediately on switch, then hydrate from the
+  // caller's own saved progress — never shared across users.
+  React.useEffect(() => {
+    setCheckedSteps({});
+    if (!selectedId) return;
+    let cancelled = false;
+    fetchJson<{ checked_indexes: number[] }>(`/api/ops-guide/${selectedId}/checklist`)
+      .then((json) => {
+        if (cancelled) return;
+        const map: Record<number, boolean> = {};
+        for (const idx of json.checked_indexes) map[idx] = true;
+        setCheckedSteps(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  React.useEffect(() => {
+    checkedStepsRef.current = checkedSteps;
+  }, [checkedSteps]);
+
+  function flushChecklist(articleId: string, steps: Record<number, boolean>) {
+    const checked_indexes = Object.entries(steps)
+      .filter(([, v]) => v)
+      .map(([k]) => Number(k));
+    fetch(`/api/ops-guide/${articleId}/checklist`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checked_indexes }),
+    }).catch(() => {});
+  }
+
+  // Flush on switching away from an article or unmounting — the API route
+  // decides whether to store the progress or reset it (all steps done).
+  React.useEffect(() => {
+    if (!selectedId) return;
+    const articleId = selectedId;
+    return () => {
+      flushChecklist(articleId, checkedStepsRef.current);
+    };
+  }, [selectedId]);
+
+  // Debounced save while actively checking steps on the current article.
+  React.useEffect(() => {
+    if (!selectedId) return;
+    const handle = setTimeout(() => flushChecklist(selectedId, checkedSteps), 800);
+    return () => clearTimeout(handle);
+  }, [checkedSteps, selectedId]);
+
+  // TOC — derived from the real rendered DOM so both legacy-HTML and new
+  // Markdown articles (which both end up as real h2/h3 elements) work the
+  // same way, with ids supplied by rehype-slug in ArticleContent.
+  React.useEffect(() => {
+    if (!contentRef.current) {
+      setToc([]);
+      return;
+    }
+    const headings = Array.from(contentRef.current.querySelectorAll("h2, h3"));
+    setToc(
+      headings.map((h, i) => {
+        if (!h.id) h.id = `ops-section-${i}`;
+        return { id: h.id, text: h.textContent?.trim() ?? "", level: h.tagName === "H2" ? 2 : 3 };
+      })
+    );
+  }, [selectedArticle?.id, selectedArticle?.content]);
+
   const categoryCounts = React.useMemo(() => {
     const counts: Record<string, number> = {};
     for (const article of articles) {
@@ -110,17 +257,13 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
   const isSearching = searchQuery.length > 0;
   const visibleArticles: (OpsArticleStub | SearchResultItem)[] = isSearching
     ? (searchResults ?? [])
-    : articles.filter((a) => activeCategory === "All" || a.category === activeCategory);
+    : activeCategory === FAVORITES_VIEW
+      ? (favoriteArticles ?? [])
+      : activeCategory === RECENT_VIEW
+        ? (recentArticles ?? [])
+        : articles.filter((a) => activeCategory === "All" || a.category === activeCategory);
 
-  const { html: annotatedHtml, toc } = React.useMemo(
-    () => (selectedArticle ? extractTocAndAnnotate(selectedArticle.content) : { html: "", toc: [] }),
-    [selectedArticle]
-  );
-
-  const checkboxCount = React.useMemo(() => {
-    if (!selectedArticle) return 0;
-    return (selectedArticle.content.match(/<input[^>]*type=["']checkbox["'][^>]*>/gi) ?? []).length;
-  }, [selectedArticle]);
+  const checkboxCount = selectedArticle ? countCheckboxes(selectedArticle.content) : 0;
   const completedSteps = Object.values(checkedSteps).filter(Boolean).length;
 
   function handleSelect(id: string) {
@@ -143,6 +286,7 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
       const exists = prev.some((a) => a.id === article.id);
       return exists ? prev.map((a) => (a.id === article.id ? stub : a)) : [stub, ...prev];
     });
+    setFormDraft(null);
     setSelectedId(article.id);
     setSelectedArticle(article);
   }
@@ -186,6 +330,30 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
 
         <nav className="flex flex-1 flex-col gap-1">
           <button
+            onClick={() => setActiveCategory(FAVORITES_VIEW)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
+              activeCategory === FAVORITES_VIEW ? "bg-accent text-white" : "hover:bg-muted"
+            )}
+          >
+            <Star className="h-3.5 w-3.5" />
+            Favorites
+            <span className="ml-auto text-xs opacity-80">{favoriteIds.size}</span>
+          </button>
+          <button
+            onClick={() => setActiveCategory(RECENT_VIEW)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
+              activeCategory === RECENT_VIEW ? "bg-accent text-white" : "hover:bg-muted"
+            )}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            Recent
+          </button>
+
+          <div className="my-1 border-t" />
+
+          <button
             onClick={() => setActiveCategory("All")}
             className={cn(
               "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
@@ -195,38 +363,54 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
             All Articles
             <span className="text-xs opacity-80">{articles.length}</span>
           </button>
-          {OPS_ARTICLE_CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={cn(
-                "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-                activeCategory === cat ? "bg-accent text-white" : "hover:bg-muted"
-              )}
-            >
-              {cat}
-              <span className="text-xs opacity-80">{categoryCounts[cat] ?? 0}</span>
-            </button>
-          ))}
+          {categories
+            .slice()
+            .sort((a, b) => a.display_order - b.display_order)
+            .map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.name)}
+                className={cn(
+                  "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
+                  activeCategory === cat.name ? "bg-accent text-white" : "hover:bg-muted"
+                )}
+              >
+                {cat.name}
+                <span className="text-xs opacity-80">{categoryCounts[cat.name] ?? 0}</span>
+              </button>
+            ))}
         </nav>
 
         {isAdmin && (
-          <Button
-            className="w-full gap-2"
-            onClick={() => {
-              setFormArticle(null);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            New Article
-          </Button>
+          <div className="space-y-2">
+            <Button
+              className="w-full gap-2"
+              onClick={() => {
+                setFormArticle(null);
+                setFormDraft(null);
+                setFormOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              New Article
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setImportOpen(true)}>
+                <FileUp className="h-3.5 w-3.5" />
+                Import
+              </Button>
+              <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setCategoryDialogOpen(true)}>
+                <Settings className="h-3.5 w-3.5" />
+                Categories
+              </Button>
+            </div>
+          </div>
         )}
       </aside>
 
       {/* Center article list */}
       <section className="w-96 shrink-0 overflow-y-auto rounded-xl border bg-card p-3">
-        {isSearching && searching && (
+        {(isSearching ? searching : loadingSpecialList && (activeCategory === FAVORITES_VIEW || activeCategory === RECENT_VIEW)) && (
           <div className="space-y-3 p-1">
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-24 w-full rounded-lg" />
@@ -238,7 +422,17 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
           <p className="p-4 text-sm text-muted-foreground">No articles match &quot;{searchQuery}&quot;.</p>
         )}
 
-        {!isSearching && visibleArticles.length === 0 && (
+        {!isSearching && !loadingSpecialList && activeCategory === FAVORITES_VIEW && visibleArticles.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">
+            No favorites yet — star an article to pin it here.
+          </p>
+        )}
+
+        {!isSearching && !loadingSpecialList && activeCategory === RECENT_VIEW && visibleArticles.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">No recently viewed articles yet.</p>
+        )}
+
+        {!isSearching && activeCategory !== FAVORITES_VIEW && activeCategory !== RECENT_VIEW && visibleArticles.length === 0 && (
           <div className="p-4 text-sm text-muted-foreground">
             No articles in this category yet.
             {isAdmin && (
@@ -246,6 +440,7 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
                 className="ml-1 text-accent underline"
                 onClick={() => {
                   setFormArticle(null);
+                  setFormDraft(null);
                   setFormOpen(true);
                 }}
               >
@@ -258,6 +453,7 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
         <div className="space-y-2">
           {visibleArticles.map((article) => {
             const isSelected = article.id === selectedId;
+            const isFavorited = favoriteIds.has(article.id);
             const excerptText = "excerpt" in article ? article.excerpt : "";
             return (
               <Card
@@ -272,32 +468,47 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
                   <Badge className={cn("text-xs", categoryBadgeClass(article.category))} variant="secondary">
                     {article.category}
                   </Badge>
-                  {isAdmin && (
-                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fetchJson<{ article: OpsArticle }>(`/api/ops-guide/${article.id}`).then((json) => {
-                            setFormArticle(json.article);
-                            setFormOpen(true);
-                          });
-                        }}
-                        className="rounded p-1 hover:bg-muted"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(article);
-                          setDeleteOpen(true);
-                        }}
-                        className="rounded p-1 hover:bg-muted hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(article.id);
+                      }}
+                      className={cn(
+                        "rounded p-1 hover:bg-muted",
+                        isFavorited ? "text-amber-500" : "opacity-0 group-hover:opacity-100"
+                      )}
+                    >
+                      <Star className="h-3.5 w-3.5" fill={isFavorited ? "currentColor" : "none"} />
+                    </button>
+                    {isAdmin && (
+                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchJson<{ article: OpsArticle }>(`/api/ops-guide/${article.id}`).then((json) => {
+                              setFormArticle(json.article);
+                              setFormDraft(null);
+                              setFormOpen(true);
+                            });
+                          }}
+                          className="rounded p-1 hover:bg-muted"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(article);
+                            setDeleteOpen(true);
+                          }}
+                          className="rounded p-1 hover:bg-muted hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <p className="mt-1.5 line-clamp-1 text-sm font-semibold">{article.title}</p>
                 {excerptText && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{excerptText}</p>}
@@ -335,6 +546,15 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
             <div className="flex items-start justify-between gap-4">
               <h1 className="text-2xl font-bold">{selectedArticle.title}</h1>
               <div className="flex shrink-0 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn("gap-1.5", favoriteIds.has(selectedArticle.id) && "text-amber-500")}
+                  onClick={() => toggleFavorite(selectedArticle.id)}
+                >
+                  <Star className="h-3.5 w-3.5" fill={favoriteIds.has(selectedArticle.id) ? "currentColor" : "none"} />
+                  {favoriteIds.has(selectedArticle.id) ? "Favorited" : "Favorite"}
+                </Button>
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={copyLink}>
                   <Copy className="h-3.5 w-3.5" />
                   Copy Link
@@ -347,6 +567,7 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
                       className="gap-1.5"
                       onClick={() => {
                         setFormArticle(selectedArticle);
+                        setFormDraft(null);
                         setFormOpen(true);
                       }}
                     >
@@ -415,32 +636,46 @@ export function OpsGuideShell({ initialArticles, isAdmin }: OpsGuideShellProps) 
               </div>
             )}
 
-            <div
-              className="ops-article-content mt-6"
-              onClick={(e) => {
-                const target = e.target as HTMLElement;
-                if (target.tagName === "INPUT" && target.getAttribute("type") === "checkbox") {
-                  const inputs = Array.from(
-                    (e.currentTarget as HTMLElement).querySelectorAll('input[type="checkbox"]')
-                  );
-                  const index = inputs.indexOf(target);
-                  if (index >= 0) {
-                    setCheckedSteps((prev) => ({ ...prev, [index]: !prev[index] }));
-                  }
-                }
-              }}
-              dangerouslySetInnerHTML={{ __html: annotatedHtml }}
-            />
+            <div className="mt-6">
+              <ArticleContent
+                content={selectedArticle.content}
+                checkedSteps={checkedSteps}
+                onToggleStep={(index) => setCheckedSteps((prev) => ({ ...prev, [index]: !prev[index] }))}
+                containerRef={contentRef}
+              />
+            </div>
           </div>
         )}
       </section>
 
-      <ArticleFormDialog open={formOpen} onOpenChange={setFormOpen} article={formArticle} onSaved={handleArticleSaved} />
+      <ArticleFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        article={formArticle}
+        categories={categories}
+        draft={formDraft}
+        onSaved={handleArticleSaved}
+      />
       <DeleteArticleDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         article={deleteTarget}
         onDeleted={handleArticleDeleted}
+      />
+      <CategoryManageDialog
+        open={categoryDialogOpen}
+        onOpenChange={setCategoryDialogOpen}
+        categories={categories}
+        onCategoriesChanged={setCategories}
+      />
+      <ImportArticleDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={(draft) => {
+          setFormArticle(null);
+          setFormDraft(draft);
+          setFormOpen(true);
+        }}
       />
     </div>
   );

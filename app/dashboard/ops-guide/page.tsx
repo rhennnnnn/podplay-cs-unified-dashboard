@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCallerProfile, isAdmin } from "@/lib/permissions";
-import type { OpsArticleStub } from "@/lib/types";
+import type { OpsArticleStub, OpsCategory } from "@/lib/types";
 import { OpsGuideShell } from "@/components/ops-guide/ops-guide-shell";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +8,15 @@ export const dynamic = "force-dynamic";
 export default async function OpsGuidePage() {
   const caller = await getCallerProfile();
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("ops_articles")
-    .select("id, title, category, tags, created_by, updated_by, created_at, updated_at, published")
-    .eq("published", true)
-    .order("category", { ascending: true })
-    .order("title", { ascending: true });
+  const [{ data, error }, { data: categoriesData }] = await Promise.all([
+    admin
+      .from("ops_articles")
+      .select("id, title, category, tags, created_by, updated_by, created_at, updated_at, published")
+      .eq("published", true)
+      .order("category", { ascending: true })
+      .order("title", { ascending: true }),
+    admin.from("ops_categories").select("id, name, display_order, created_at").order("display_order", { ascending: true }),
+  ]);
 
   if (error) {
     return (
@@ -23,5 +26,11 @@ export default async function OpsGuidePage() {
     );
   }
 
-  return <OpsGuideShell initialArticles={(data ?? []) as unknown as OpsArticleStub[]} isAdmin={isAdmin(caller)} />;
+  return (
+    <OpsGuideShell
+      initialArticles={(data ?? []) as unknown as OpsArticleStub[]}
+      initialCategories={(categoriesData ?? []) as unknown as OpsCategory[]}
+      isAdmin={isAdmin(caller)}
+    />
+  );
 }

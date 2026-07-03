@@ -1,9 +1,12 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
+import { useTheme } from "next-themes";
+import { ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 
-import { OPS_ARTICLE_CATEGORIES, type OpsArticle } from "@/lib/types";
+import type { OpsArticle, OpsCategory } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,19 +21,39 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
+
+// CodeMirror (which MDEditor wraps) freezes the tab on a single very long
+// line — legacy articles can embed a base64 image inline as one huge line.
+// Fall back to a plain textarea for those instead of hanging the browser.
+const MAX_SAFE_LINE_LENGTH = 5000;
+function hasUnsafeLongLine(content: string): boolean {
+  return content.split("\n").some((line) => line.length > MAX_SAFE_LINE_LENGTH);
+}
+
+export interface ArticleDraft {
+  title?: string;
+  content?: string;
+}
+
 interface ArticleFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   article: OpsArticle | null; // null = creating new
+  categories: OpsCategory[];
+  draft?: ArticleDraft | null; // pre-fill from import, only used when article is null
   onSaved: (article: OpsArticle) => void;
 }
 
 const EMPTY_FORM = { title: "", category: "", content: "", tags: "", published: true };
 
-export function ArticleFormDialog({ open, onOpenChange, article, onSaved }: ArticleFormDialogProps) {
+export function ArticleFormDialog({ open, onOpenChange, article, categories, draft, onSaved }: ArticleFormDialogProps) {
+  const { resolvedTheme } = useTheme();
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [saving, setSaving] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -44,11 +67,33 @@ export function ArticleFormDialog({ open, onOpenChange, article, onSaved }: Arti
         published: article.published,
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({
+        ...EMPTY_FORM,
+        title: draft?.title ?? "",
+        content: draft?.content ?? "",
+      });
     }
-  }, [open, article]);
+  }, [open, article, draft]);
 
   const isEdit = Boolean(article);
+  const useSimpleEditor = React.useMemo(() => hasUnsafeLongLine(form.content), [form.content]);
+
+  async function handleImageUpload(file: File) {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/ops-guide/upload-image", { method: "POST", body: formData });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to upload image.");
+      const markdown = `![${file.name}](${json.url})`;
+      setForm((f) => ({ ...f, content: `${f.content}\n\n${markdown}\n` }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload image.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function handleSave() {
     setError(null);
@@ -90,11 +135,11 @@ export function ArticleFormDialog({ open, onOpenChange, article, onSaved }: Arti
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Article" : "New Article"}</DialogTitle>
           <DialogDescription>
-            {isEdit ? "Update this OPS Guide article." : "Add a new article to the OPS Guide."}
+            {isEdit ? "Update this OPS Guide article." : "Add a new article to the OPS Guide. Content is Markdown."}
           </DialogDescription>
         </DialogHeader>
 
@@ -116,9 +161,9 @@ export function ArticleFormDialog({ open, onOpenChange, article, onSaved }: Arti
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
-                {OPS_ARTICLE_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.name}>
+                    {cat.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -136,14 +181,52 @@ export function ArticleFormDialog({ open, onOpenChange, article, onSaved }: Arti
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="article-content">Content (HTML)</Label>
-            <Textarea
-              id="article-content"
-              value={form.content}
-              onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-              className="min-h-[300px] font-mono text-sm"
-              placeholder="<h2>Section title</h2><p>Steps...</p>"
+            <Label>Content (Markdown)</Label>
+            {useSimpleEditor ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  This article has a large embedded image — using the plain text editor to avoid slowing down the
+                  browser.
+                </p>
+                <Textarea
+                  value={form.content}
+                  onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+                  className="min-h-[300px] font-mono text-sm"
+                  placeholder="## Section title&#10;&#10;Steps...&#10;&#10;- [ ] Step one"
+                />
+              </>
+            ) : (
+              <div data-color-mode={resolvedTheme === "light" ? "light" : "dark"}>
+                <MDEditor
+                  value={form.content}
+                  onChange={(value) => setForm((f) => ({ ...f, content: value ?? "" }))}
+                  height={360}
+                  textareaProps={{ placeholder: "## Section title\n\nSteps...\n\n- [ ] Step one" }}
+                />
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImageUpload(file);
+                e.target.value = "";
+              }}
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              {uploading ? "Uploading…" : "Insert Image"}
+            </Button>
           </div>
 
           <div className="flex items-center gap-2">

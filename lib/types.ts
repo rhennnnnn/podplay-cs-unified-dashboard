@@ -48,14 +48,12 @@ export interface Profile {
   created_at: string;
 }
 
-export const OPS_ARTICLE_CATEGORIES = [
-  "Camera Coefficients",
-  "Credit Card Terminal Setup",
-  "IT Troubleshooting Manual",
-  "Tech Support",
-] as const;
-
-export type OpsArticleCategory = (typeof OPS_ARTICLE_CATEGORIES)[number];
+export interface OpsCategory {
+  id: string;
+  name: string;
+  display_order: number;
+  created_at: string;
+}
 
 export interface OpsArticle {
   id: string;
@@ -71,6 +69,26 @@ export interface OpsArticle {
 }
 
 export type OpsArticleStub = Omit<OpsArticle, "content">;
+
+export interface OpsArticleChecklistState {
+  user_id: string;
+  article_id: string;
+  checked_indexes: number[];
+  updated_at: string;
+}
+
+export interface OpsArticleFavorite {
+  user_id: string;
+  article_id: string;
+  created_at: string;
+}
+
+export interface OpsArticleView {
+  id: number;
+  user_id: string;
+  article_id: string;
+  viewed_at: string;
+}
 
 export interface Database {
   public: {
@@ -103,6 +121,30 @@ export interface Database {
         Row: OpsArticle;
         Insert: Partial<OpsArticle> & { title: string; category: string; content: string };
         Update: Partial<OpsArticle>;
+        Relationships: [];
+      };
+      ops_categories: {
+        Row: OpsCategory;
+        Insert: Partial<OpsCategory> & { name: string };
+        Update: Partial<OpsCategory>;
+        Relationships: [];
+      };
+      ops_article_checklist_state: {
+        Row: OpsArticleChecklistState;
+        Insert: Partial<OpsArticleChecklistState> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleChecklistState>;
+        Relationships: [];
+      };
+      ops_article_favorites: {
+        Row: OpsArticleFavorite;
+        Insert: Partial<OpsArticleFavorite> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleFavorite>;
+        Relationships: [];
+      };
+      ops_article_views: {
+        Row: OpsArticleView;
+        Insert: Partial<OpsArticleView> & { user_id: string; article_id: string };
+        Update: Partial<OpsArticleView>;
         Relationships: [];
       };
     };
