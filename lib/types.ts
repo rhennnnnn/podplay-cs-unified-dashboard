@@ -48,6 +48,27 @@ export interface Profile {
   created_at: string;
 }
 
+export type ApiIntegrationStatus = "active" | "unresponsive" | "broken" | "down" | "not_configured";
+
+export interface ApiIntegration {
+  id: string;
+  label: string;
+  status: ApiIntegrationStatus;
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_message: string | null;
+  requests_used_today: number;
+  requests_used_date: string;
+  requests_limit_per_day: number | null;
+  auto_poll_interval_minutes: number;
+  auto_poll_paused: boolean;
+  manual_refresh_paused: boolean;
+  paused_all: boolean;
+  next_refresh_allowed_at: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -73,6 +94,12 @@ export interface Database {
         Row: Profile;
         Insert: Partial<Profile> & { id: string; email: string; first_name: string; last_name: string };
         Update: Partial<Profile>;
+        Relationships: [];
+      };
+      api_integrations: {
+        Row: ApiIntegration;
+        Insert: Partial<ApiIntegration> & { id: string; label: string };
+        Update: Partial<ApiIntegration>;
         Relationships: [];
       };
     };

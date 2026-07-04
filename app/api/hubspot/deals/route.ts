@@ -8,10 +8,12 @@ import {
   getCacheTimestamp,
   getLastEmail,
   hubspotFetch,
+  invalidateCache,
   mapLimit,
   withCache,
   type PipelineKey,
 } from "@/lib/hubspot";
+import { getIntegrationSettings, IntegrationPausedError } from "@/lib/api-health";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,7 @@ export async function GET(req: NextRequest) {
   const owner = params.get("owner");
   const search = params.get("search");
   const after = params.get("after");
+  const manual = params.get("manual") === "1";
 
   const filters: { propertyName: string; operator: string; value: string }[] = [];
   if (pipelineParam !== "all" && (pipelineParam === "basic" || pipelineParam === "pro")) {
@@ -76,14 +79,21 @@ export async function GET(req: NextRequest) {
   // HubSpot. TTL is generous (5 min) because this now also does a per-card
   // last-email lookup below — a moderately expensive step that only needs to
   // run once per window, shared across every CSA, not on every poll.
-  const cacheKey = `deals:${params.toString()}`;
+  const cacheKey = `deals:${params.toString().replace(/&?manual=1/, "")}`;
 
   try {
+    if (manual) {
+      // Manual refresh must always be a real, non-cached upstream call —
+      // drop whatever's cached so withCache below is forced to re-fetch.
+      invalidateCache(cacheKey);
+    }
+
     const result = await withCache(cacheKey, 5 * 60_000, async () => {
-      const data = await hubspotFetch<SearchResponse>(`/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const data = await hubspotFetch<SearchResponse>(
+        `/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/search`,
+        { method: "POST", body: JSON.stringify(body) },
+        { trigger: manual ? "manual" : "auto" }
+      );
 
       const ids = data.results.map((r) => r.id);
       const [contactAssoc, companyAssoc] = await Promise.all([
@@ -133,8 +143,18 @@ export async function GET(req: NextRequest) {
       return { deals, after: data.paging?.next?.after ?? null, total: data.total };
     });
 
-    return NextResponse.json({ ...result, fetchedAt: getCacheTimestamp(cacheKey) });
+    const settings = await getIntegrationSettings("hubspot");
+    return NextResponse.json({
+      ...result,
+      fetchedAt: getCacheTimestamp(cacheKey),
+      nextRefreshAllowedAt: settings?.next_refresh_allowed_at ?? null,
+      manualRefreshPaused: settings?.manual_refresh_paused ?? false,
+      pausedAll: settings?.paused_all ?? false,
+    });
   } catch (err) {
+    if (err instanceof IntegrationPausedError) {
+      return NextResponse.json({ error: err.message, paused: true }, { status: 423 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to load onboardings." },
       { status: 502 }

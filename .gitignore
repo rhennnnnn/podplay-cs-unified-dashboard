@@ -41,3 +41,6 @@ CONTEXT.md
 INSTRUCTIONS.md
 DOCUMENTATION.md
 HANDOFF.md
+
+# MCP server config (contains Supabase access token — never commit)
+.mcp.json

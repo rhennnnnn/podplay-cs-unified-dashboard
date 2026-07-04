@@ -22,6 +22,9 @@ export interface DealsResponse {
   after: string | null;
   total: number;
   fetchedAt: number | null;
+  nextRefreshAllowedAt: string | null;
+  manualRefreshPaused: boolean;
+  pausedAll: boolean;
 }
 
 export interface OwnersResponse {
