@@ -48,7 +48,7 @@ export interface Profile {
   created_at: string;
 }
 
-export type ApiIntegrationStatus = "active" | "unresponsive" | "broken" | "down" | "not_configured";
+export type ApiIntegrationStatus = "active" | "unresponsive" | "broken" | "down" | "not_configured" | "access_pending";
 
 export interface ApiIntegration {
   id: string;

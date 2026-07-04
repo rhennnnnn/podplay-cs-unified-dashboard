@@ -18,10 +18,11 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ActivityResponse, DealDetailResponse, OnboardingListItem } from "@/components/onboarding/onboarding-types";
+import type { ActivityResponse, DealDetailResponse, MrpJoinedResponse, OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 const PORTAL_ID = "44006894";
 const ACTIVITY_ICON = { note: StickyNote, email: Mail, call: PhoneCall, task: CheckSquare };
@@ -62,6 +63,13 @@ export function OnboardingDetailSheet({
 }: OnboardingDetailSheetProps) {
   const { data, isLoading } = useSWR<DealDetailResponse>(dealId ? `/api/hubspot/deals/${dealId}` : null, fetcher);
   const { data: activityData } = useSWR<ActivityResponse>(dealId ? `/api/hubspot/activity/${dealId}` : null, fetcher);
+  const companyName = data?.companies[0]?.name ?? null;
+  // Reads the cached joined HubSpot+MRP result — not a fresh per-open Sheets
+  // API call. One sync run (lib/onboarding-sync.ts) serves every open sheet.
+  const { data: mrpData, isLoading: mrpLoading } = useSWR<MrpJoinedResponse>(
+    companyName ? `/api/mrp?company=${encodeURIComponent(companyName)}` : null,
+    fetcher
+  );
   const [trackedLocationId, setTrackedLocationId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -288,6 +296,56 @@ export function OnboardingDetailSheet({
                 />
               </div>
             </div>
+
+            <Separator className="bg-sidebar-border" />
+
+            {/* MRP — read-only, matched by company/club name. Reads the
+                cached joined result (GET /api/mrp), never a live per-open
+                Sheets call. Greenfield/Migration and Quotes come from
+                HubSpot's own onboarding properties, not the MRP sheet. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">MRP</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {mrpLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                ) : mrpData?.mrpStatus === "access_pending" ? (
+                  <p className="text-sm text-muted-foreground">
+                    MRP access pending — waiting on Google Sheets permission.
+                  </p>
+                ) : mrpData && !mrpData.record?.mrp ? (
+                  <p className="text-sm text-muted-foreground">No matching MRP record found.</p>
+                ) : !mrpData?.record ? (
+                  <p className="text-sm text-muted-foreground">MRP data unavailable.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Hardware Delivery Date" value={mrpData.record.mrp?.hardwareDeliveryDate} />
+                    <Field
+                      label="Delivered"
+                      value={
+                        mrpData.record.mrp?.deliveredStatus ? (
+                          <Badge variant="secondary">{mrpData.record.mrp.deliveredStatus}</Badge>
+                        ) : null
+                      }
+                    />
+                    <Field
+                      label="Install Started"
+                      value={
+                        mrpData.record.mrp?.installStartedStatus ? (
+                          <Badge variant="secondary">{mrpData.record.mrp.installStartedStatus}</Badge>
+                        ) : null
+                      }
+                    />
+                    <Field label="Greenfield / Migration" value={props?.migration} />
+                    <Field label="Quotes" value={props?.quotes} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <Separator className="bg-sidebar-border" />
 
