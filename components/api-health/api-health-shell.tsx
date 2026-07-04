@@ -28,6 +28,9 @@ const STATUS_META: Record<ApiIntegrationStatus, { label: string; variant: BadgeP
   broken: { label: "Broken", variant: "orange" },
   down: { label: "Down", variant: "destructive" },
   not_configured: { label: "Not configured", variant: "secondary" },
+  // Informational, not an outage — a real permission gap (Sheets Viewer share
+  // hasn't gone through yet), distinct from broken/down.
+  access_pending: { label: "Waiting on Access", variant: "blue" },
 };
 
 const NEEDS_ATTENTION: ApiIntegrationStatus[] = ["broken", "down", "unresponsive"];
@@ -99,12 +102,95 @@ export function ApiHealthShell({ initialIntegrations }: ApiHealthShellProps) {
         </div>
       )}
 
+      {integrations.some((i) => i.id === "hubspot" || i.id === "mrp_sheets") && (
+        <SyncIntervalControl
+          integrations={integrations}
+          onSaved={() => mutate()}
+        />
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         {integrations.map((integration) => (
           <IntegrationCard key={integration.id} integration={integration} onPatch={(body) => patch(integration.id, body)} />
         ))}
       </div>
     </div>
+  );
+}
+
+// HubSpot and MRP poll together — MRP is meaningless without a fresh HubSpot
+// list to match against. One control sets auto_poll_interval_minutes on both
+// rows at once; each card below keeps its own independent status/usage/error/
+// pause toggles.
+function SyncIntervalControl({
+  integrations,
+  onSaved,
+}: {
+  integrations: ApiIntegration[];
+  onSaved: () => void;
+}) {
+  const hubspot = integrations.find((i) => i.id === "hubspot");
+  const mrp = integrations.find((i) => i.id === "mrp_sheets");
+  const current = hubspot?.auto_poll_interval_minutes ?? mrp?.auto_poll_interval_minutes ?? 30;
+  const [minutes, setMinutes] = React.useState(String(current));
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setMinutes(String(current));
+  }, [current]);
+
+  async function handleSave() {
+    const parsed = Number(minutes);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      toast.error("Interval must be a whole number of minutes, at least 1.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/api-health/sync-interval", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes: parsed }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Update failed");
+      toast.success("Sync interval updated.");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update sync interval.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Onboarding Sync Interval</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          HubSpot and MRP poll together on this schedule — MRP always runs after HubSpot, never at the same instant.
+        </p>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="sync-interval" className="sr-only">
+            Sync interval (minutes)
+          </Label>
+          <Input
+            id="sync-interval"
+            type="number"
+            min={1}
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">minutes</span>
+          <Button size="sm" variant="outline" disabled={saving || minutes === String(current)} onClick={handleSave}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -115,25 +201,8 @@ function IntegrationCard({
   integration: ApiIntegration;
   onPatch: (body: Record<string, unknown>) => Promise<void>;
 }) {
-  const [interval, setInterval] = React.useState(String(integration.auto_poll_interval_minutes));
-  const [savingInterval, setSavingInterval] = React.useState(false);
   const statusMeta = STATUS_META[integration.status];
   const pct = usagePct(integration);
-
-  React.useEffect(() => {
-    setInterval(String(integration.auto_poll_interval_minutes));
-  }, [integration.auto_poll_interval_minutes]);
-
-  async function handleSaveInterval() {
-    const parsed = Number(interval);
-    if (!Number.isInteger(parsed) || parsed < 1) {
-      toast.error("Interval must be a whole number of minutes, at least 1.");
-      return;
-    }
-    setSavingInterval(true);
-    await onPatch({ auto_poll_interval_minutes: parsed });
-    setSavingInterval(false);
-  }
 
   // blue = good, yellow = warning (80%+), red = critical (95%+). No limit
   // configured yet still gets a full blue bar — "no cap set" reads as good,
@@ -165,13 +234,23 @@ function IntegrationCard({
           </div>
         </div>
 
-        {integration.last_error_message && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs">
-            <p className="font-medium text-destructive">
-              {integration.last_error_at ? formatRelativeTime(integration.last_error_at) : "Last error"}
+        {integration.status === "access_pending" ? (
+          <div className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs">
+            <p className="font-medium text-blue-600 dark:text-blue-400">Waiting on Google Sheets Viewer access.</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Code is wired up and calling the sheet — the share invite just hasn&apos;t been accepted yet. Nothing else
+              in the app is affected.
             </p>
-            <p className="mt-0.5 line-clamp-3 text-muted-foreground">{integration.last_error_message}</p>
           </div>
+        ) : (
+          integration.last_error_message && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs">
+              <p className="font-medium text-destructive">
+                {integration.last_error_at ? formatRelativeTime(integration.last_error_at) : "Last error"}
+              </p>
+              <p className="mt-0.5 line-clamp-3 text-muted-foreground">{integration.last_error_message}</p>
+            </div>
+          )
         )}
 
         <div className="space-y-4">
@@ -207,30 +286,6 @@ function IntegrationCard({
             onCheckedChange={(checked) => onPatch({ manual_refresh_paused: checked })}
             disabled={integration.paused_all}
           />
-        </div>
-
-        <div className="space-y-1.5 border-t pt-4">
-          <Label htmlFor={`interval-${integration.id}`} className="text-xs text-muted-foreground">
-            Auto-poll interval (minutes)
-          </Label>
-          <div className="flex items-center gap-2">
-            <Input
-              id={`interval-${integration.id}`}
-              type="number"
-              min={1}
-              value={interval}
-              onChange={(e) => setInterval(e.target.value)}
-              className="w-24"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={savingInterval || interval === String(integration.auto_poll_interval_minutes)}
-              onClick={handleSaveInterval}
-            >
-              {savingInterval ? "Saving…" : "Save"}
-            </Button>
-          </div>
         </div>
       </CardContent>
     </Card>

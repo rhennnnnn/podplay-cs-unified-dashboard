@@ -49,6 +49,17 @@ export interface DealDetailResponse {
   notes: { id: string; hs_note_body?: string | null; hs_timestamp?: string | null; hubspot_owner_id?: string | null }[];
 }
 
+export interface MrpJoinedResponse {
+  record: { companyName: string; mrp: { clubName: string; hardwareDeliveryDate: string | null; deliveredStatus: string | null; installStartedStatus: string | null } | null } | null;
+  mrpStatus: "active" | "unresponsive" | "broken" | "down" | "not_configured" | "access_pending" | null;
+}
+
+export interface OnboardingSyncRefreshResponse {
+  hubspot: "ran" | "skipped" | "error";
+  mrp: "ran" | "skipped" | "error";
+  nextRefreshAllowedAt: string | null;
+}
+
 export interface ActivityResponse {
   activity: {
     type: "note" | "email" | "call" | "task";

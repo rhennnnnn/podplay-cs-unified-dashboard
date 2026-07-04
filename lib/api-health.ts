@@ -44,11 +44,17 @@ export async function recordCall(
       updates.status = "active" satisfies ApiIntegrationStatus;
       updates.last_success_at = now.toISOString();
     } else {
-      let status: ApiIntegrationStatus = result.statusCode === 429 || (result.statusCode ?? 0) >= 500 || !result.statusCode
-        ? "down"
-        : "broken";
+      // 403 is a real permission gap (Viewer share not granted yet), not an
+      // outage — checked before the generic 4xx->"broken" rule so the Health
+      // panel shows the true cause instead of a misleading "broken" badge.
+      let status: ApiIntegrationStatus =
+        result.statusCode === 403
+          ? "access_pending"
+          : result.statusCode === 429 || (result.statusCode ?? 0) >= 500 || !result.statusCode
+            ? "down"
+            : "broken";
 
-      if (row.last_success_at) {
+      if (status !== "access_pending" && row.last_success_at) {
         const gapMs = now.getTime() - new Date(row.last_success_at).getTime();
         const thresholdMs = UNRESPONSIVE_GAP_MULTIPLIER * row.auto_poll_interval_minutes * 60_000;
         if (gapMs > thresholdMs) status = "unresponsive";
@@ -69,6 +75,14 @@ export type IntegrationPollSettings = Pick<
   ApiIntegration,
   "auto_poll_interval_minutes" | "auto_poll_paused" | "manual_refresh_paused" | "paused_all" | "next_refresh_allowed_at"
 >;
+
+// Lightweight status-only read — used by the MRP route to pick the right
+// empty state (access_pending vs no-match vs generic failure) without
+// pulling the full IntegrationPollSettings shape.
+export async function getIntegrationStatus(integrationId: string): Promise<ApiIntegrationStatus | null> {
+  const row = await getRow(integrationId);
+  return row?.status ?? null;
+}
 
 export async function getIntegrationSettings(integrationId: string): Promise<IntegrationPollSettings | null> {
   const row = await getRow(integrationId);

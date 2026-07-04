@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OnboardingCard } from "@/components/onboarding/onboarding-card";
 import { OnboardingDetailSheet } from "@/components/onboarding/onboarding-detail-sheet";
 import { TrackOpeningDialog } from "@/components/onboarding/track-opening-dialog";
-import type { DealsResponse, OnboardingListItem, OwnersResponse } from "@/components/onboarding/onboarding-types";
+import type { DealsResponse, OnboardingListItem, OnboardingSyncRefreshResponse, OwnersResponse } from "@/components/onboarding/onboarding-types";
 
 const fetcher = (url: string) => fetch(url).then(async (res) => {
   const json = await res.json();
@@ -82,6 +82,15 @@ export function OnboardingGrid({
     refreshInterval: 60_000,
     revalidateOnFocus: false,
   });
+  // MRP shares the same auto-poll interval as HubSpot (read above), but has
+  // its own independent pause state — read separately so the board can show
+  // "MRP sync skipped" without affecting the HubSpot half of a refresh.
+  const { data: mrpPolling } = useSWR<PollingSettings>("/api/integrations/mrp_sheets/polling", fetcher, {
+    refreshInterval: 60_000,
+    revalidateOnFocus: false,
+  });
+  const [combinedNextRefreshAllowedAt, setCombinedNextRefreshAllowedAt] = React.useState<string | null>(null);
+  const [mrpSkippedNote, setMrpSkippedNote] = React.useState(false);
 
   const dealsKey = React.useMemo(() => {
     const params = new URLSearchParams({ pipeline });
@@ -145,10 +154,15 @@ export function OnboardingGrid({
   }, [pipelineDef, deals]);
 
   // Cooldown is derived from the server's shared next_refresh_allowed_at
-  // (returned on every deals response) rather than a local click timestamp,
-  // so every open tab's countdown reads identically.
-  const cooldownSeconds = data?.nextRefreshAllowedAt
-    ? Math.max(0, Math.ceil((new Date(data.nextRefreshAllowedAt).getTime() - Date.now()) / 1000))
+  // (returned on every deals response, or the combined value from the last
+  // onboarding-sync refresh — whichever is later) rather than a local click
+  // timestamp, so every open tab's countdown reads identically and doesn't
+  // re-enable until BOTH HubSpot and MRP are actually ready again.
+  const effectiveNextRefreshAllowedAt = [data?.nextRefreshAllowedAt, combinedNextRefreshAllowedAt]
+    .filter((t): t is string => Boolean(t))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+  const cooldownSeconds = effectiveNextRefreshAllowedAt
+    ? Math.max(0, Math.ceil((new Date(effectiveNextRefreshAllowedAt).getTime() - Date.now()) / 1000))
     : 0;
   const manualRefreshDisabled =
     cooldownSeconds > 0 || Boolean(data?.manualRefreshPaused) || Boolean(data?.pausedAll) || Boolean(polling?.manualRefreshPaused) || Boolean(polling?.pausedAll);
@@ -161,14 +175,20 @@ export function OnboardingGrid({
   async function handleManualRefresh() {
     if (manualRefreshDisabled) return;
     try {
-      const url = dealsKey.includes("?") ? `${dealsKey}&manual=1` : `${dealsKey}?manual=1`;
-      const res = await fetch(url);
-      const json = await res.json();
+      const params = new URLSearchParams({ pipeline });
+      if (owner !== "all") params.set("owner", owner);
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/onboarding-sync/refresh?${params.toString()}`, { method: "POST" });
+      const json = (await res.json()) as OnboardingSyncRefreshResponse & { error?: string };
       if (!res.ok) {
         toast.error(json.error ?? "Refresh failed.");
         return;
       }
-      await mutate(json, { revalidate: false });
+      setCombinedNextRefreshAllowedAt(json.nextRefreshAllowedAt);
+      setMrpSkippedNote(json.mrp === "skipped");
+      // The sync route already refreshed HubSpot's cache server-side — a
+      // plain revalidate here now hits that warm cache instead of HubSpot.
+      await mutate();
     } catch {
       toast.error("Refresh failed.");
     }
@@ -203,6 +223,9 @@ export function OnboardingGrid({
               <RefreshCw className="h-3.5 w-3.5" />
               {cooldownSeconds > 0 ? `Refresh (${cooldownSeconds}s)` : "Refresh"}
             </Button>
+            {(mrpSkippedNote || mrpPolling?.pausedAll || mrpPolling?.autoPollPaused) && (
+              <span className="whitespace-nowrap text-xs text-muted-foreground">MRP sync skipped — paused</span>
+            )}
             <Button size="sm" variant="outline" className="gap-1.5" asChild>
               <a href="https://app.hubspot.com/contacts/44006894/objects/0-162" target="_blank" rel="noreferrer">
                 Open in HubSpot <ExternalLink className="h-3.5 w-3.5" />
