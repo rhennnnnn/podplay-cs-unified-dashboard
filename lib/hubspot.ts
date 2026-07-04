@@ -560,6 +560,11 @@ export async function hubspotFetch<T>(
   }
 
   await recordCall("hubspot", { success: true });
-  if (trigger === "manual") await markRefreshed("hubspot");
+  // Every real (non-cached) call refreshes the shared cooldown, not just
+  // manual ones — the board is shared across every CSA, so an auto-poll
+  // tick from any user's open tab already refreshed the data for everyone,
+  // and the Refresh button should reflect that instead of allowing an
+  // immediate redundant call right after.
+  await markRefreshed("hubspot");
   return res.json() as Promise<T>;
 }

@@ -24,6 +24,10 @@ alter table api_integrations enable row level security;
 create policy "authenticated read" on api_integrations for select using (auth.role() = 'authenticated');
 create policy "admin write" on api_integrations for all using (public.is_admin_user()) with check (public.is_admin_user());
 
+-- HubSpot: 250,000 calls/day is the standard private-app daily cap.
+-- MRP Google Sheet: Sheets API is quota'd per-minute (300 read requests/min/project),
+-- not per-day officially — 432,000 is that per-minute quota extrapolated to a full day,
+-- an approximation, not a documented daily figure. Admins can adjust either in the panel.
 insert into api_integrations (id, label, auto_poll_interval_minutes, requests_limit_per_day)
-values ('hubspot', 'HubSpot', 30, null), ('mrp_sheets', 'MRP Google Sheet', 60, null)
+values ('hubspot', 'HubSpot', 30, 250000), ('mrp_sheets', 'MRP Google Sheet', 60, 432000)
 on conflict (id) do nothing;

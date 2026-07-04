@@ -135,7 +135,10 @@ function IntegrationCard({
     setSavingInterval(false);
   }
 
-  const barColor = pct === null ? "" : pct >= 95 ? "bg-destructive" : pct >= 80 ? "bg-amber-500" : "bg-accent";
+  // blue = good, yellow = warning (80%+), red = critical (95%+). No limit
+  // configured yet still gets a full blue bar — "no cap set" reads as good,
+  // not as an empty/broken meter.
+  const barColor = pct === null || pct < 80 ? "bg-blue-500" : pct >= 95 ? "bg-destructive" : "bg-amber-500";
 
   return (
     <Card>
@@ -155,13 +158,11 @@ function IntegrationCard({
               {integration.requests_used_today} {integration.requests_used_today === 1 ? "request" : "requests"} today
               {integration.requests_limit_per_day !== null && ` / ${integration.requests_limit_per_day} limit`}
             </span>
-            {pct !== null && <span>{Math.round(pct)}%</span>}
+            <span>{pct !== null ? `${Math.round(pct)}%` : "No daily limit set"}</span>
           </div>
-          {pct !== null && (
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${pct}%` }} />
-            </div>
-          )}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: pct !== null ? `${pct}%` : "100%" }} />
+          </div>
         </div>
 
         {integration.last_error_message && (
