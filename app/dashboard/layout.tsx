@@ -21,15 +21,16 @@ export default async function DashboardLayout({
   // profiles row are allowed in. Anyone whose profile was deleted (or who
   // never got one) is signed out here rather than left in a half-authed
   // dashboard session.
-  const { data: profile } = await supabase.from("profiles").select("id").eq("id", data.user!.id).maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("id, role").eq("id", data.user!.id).maybeSingle();
   if (!profile) {
     await supabase.auth.signOut();
     redirect("/login?error=no_access");
   }
+  const isAdminUser = (profile as unknown as { role: string } | null)?.role === "admin";
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <DashboardSidebar email={data.user.email ?? ""} />
+      <DashboardSidebar email={data.user.email ?? ""} isAdmin={isAdminUser} />
       <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
         {children}
       </main>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Link2, Wrench, Users, LogOut, Menu } from "lucide-react";
+import { Home, ClipboardList, Link2, Wrench, Users, LogOut, Menu, Activity } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -18,12 +18,15 @@ const NAV_ITEMS = [
   { href: "/dashboard/settings/accounts", label: "Team", icon: Users },
 ];
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+const ADMIN_NAV_ITEM = { href: "/dashboard/settings/api-health", label: "API Health", icon: Activity };
+
+function NavLinks({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: boolean }) {
   const pathname = usePathname();
+  const items = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <nav className="flex flex-1 flex-col gap-1 px-3">
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const isActive =
           item.href === "/dashboard"
             ? pathname === item.href
@@ -65,7 +68,7 @@ function SignOutButton({ loading, onClick }: { loading: boolean; onClick: () => 
   );
 }
 
-function SidebarBody({ email, onNavigate }: { email: string; onNavigate?: () => void }) {
+function SidebarBody({ email, isAdmin, onNavigate }: { email: string; isAdmin: boolean; onNavigate?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
   const [signingOut, setSigningOut] = React.useState(false);
@@ -81,7 +84,7 @@ function SidebarBody({ email, onNavigate }: { email: string; onNavigate?: () => 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="px-4 py-5 text-lg font-semibold text-white">PodPlay CS</div>
-      <NavLinks onNavigate={onNavigate} />
+      <NavLinks onNavigate={onNavigate} isAdmin={isAdmin} />
       <div className="mt-auto border-t border-sidebar-border p-3">
         <p className="truncate px-3 py-1 text-xs text-sidebar-foreground/60">{email}</p>
         <SignOutButton loading={signingOut} onClick={handleSignOut} />
@@ -90,13 +93,13 @@ function SidebarBody({ email, onNavigate }: { email: string; onNavigate?: () => 
   );
 }
 
-export function DashboardSidebar({ email }: { email: string }) {
+export function DashboardSidebar({ email, isAdmin = false }: { email: string; isAdmin?: boolean }) {
   const [open, setOpen] = React.useState(false);
 
   return (
     <>
       <aside className="hidden w-64 shrink-0 border-r border-sidebar-border md:block">
-        <SidebarBody email={email} />
+        <SidebarBody email={email} isAdmin={isAdmin} />
       </aside>
 
       <div className="flex items-center gap-3 border-b bg-sidebar px-4 py-3 text-white md:hidden">
@@ -108,7 +111,7 @@ export function DashboardSidebar({ email }: { email: string }) {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
-            <SidebarBody email={email} onNavigate={() => setOpen(false)} />
+            <SidebarBody email={email} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
         <span className="text-sm font-semibold">PodPlay CS</span>

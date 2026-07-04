@@ -5,17 +5,21 @@ import { createClient } from "@/lib/supabase/server";
 import { computeClientStats } from "@/lib/client-hub";
 import { getOnboardingOverviewStats } from "@/lib/hubspot";
 import { getOpsGuideOverviewStats } from "@/lib/ops-guide-server";
+import { getCallerProfile, isAdmin } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiHealthChip } from "@/components/api-health/api-health-chip";
 
 export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
   const supabase = createClient();
-  const [{ data: locations, error }, onboardingStats, opsGuideStats] = await Promise.all([
+  const [{ data: locations, error }, onboardingStats, opsGuideStats, callerProfile] = await Promise.all([
     supabase.from("locations").select("*"),
     getOnboardingOverviewStats().catch(() => null),
     getOpsGuideOverviewStats().catch(() => null),
+    getCallerProfile(),
   ]);
+  const callerIsAdmin = isAdmin(callerProfile);
 
   const stats = computeClientStats(locations ?? []);
 
@@ -38,9 +42,12 @@ export default async function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-        <p className="text-sm text-muted-foreground">Client Opening Tracker summary at a glance.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <p className="text-sm text-muted-foreground">Client Opening Tracker summary at a glance.</p>
+        </div>
+        {callerIsAdmin && <ApiHealthChip />}
       </div>
 
       {error ? (

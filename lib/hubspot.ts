@@ -8,6 +8,8 @@
 // pipelines rarely change, so they're stored as constants per spec rather than
 // re-fetched on every request.
 
+import { IntegrationPausedError, markRefreshed, recordCall, shouldAllowPoll, type PollTrigger } from "@/lib/api-health";
+
 export const ONBOARDING_OBJECT_TYPE = "0-162";
 
 export const HUBSPOT_BASE_URL = "https://api.hubapi.com";
@@ -508,24 +510,61 @@ export function getCacheTimestamp(key: string): number | null {
   return cacheStore.get(key)?.fetchedAt ?? null;
 }
 
+// Forces the next withCache(key, ...) call to do a real fetch instead of
+// serving a stale entry — used by manual refresh, which must always be a
+// real, non-cached upstream call.
+export function invalidateCache(key: string): void {
+  cacheStore.delete(key);
+}
+
 // Server-only fetch wrapper — never import this from a client component.
-export async function hubspotFetch<T>(path: string, init?: RequestInit): Promise<T> {
+// Every call here is gated by the shared api_integrations kill switch
+// (lib/api-health.ts) and reports its outcome back to it. `trigger` defaults
+// to "auto" (background polling); pass "manual" only from the one real
+// user-initiated refresh call per request so the manual-refresh pause/cooldown
+// applies to the right check.
+export async function hubspotFetch<T>(
+  path: string,
+  init?: RequestInit,
+  opts?: { trigger?: PollTrigger }
+): Promise<T> {
+  const trigger = opts?.trigger ?? "auto";
+  const allowed = await shouldAllowPoll("hubspot", trigger);
+  if (!allowed) {
+    throw new IntegrationPausedError("HubSpot polling is currently paused by an admin.");
+  }
+
   const token = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   if (!token) throw new Error("HUBSPOT_PRIVATE_APP_TOKEN is not configured.");
 
-  const res = await fetch(`${HUBSPOT_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${HUBSPOT_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+      cache: "no-store",
+    });
+  } catch (err) {
+    await recordCall("hubspot", { success: false, errorMessage: err instanceof Error ? err.message : "Network error" });
+    throw err;
+  }
 
   if (!res.ok) {
     const body = await res.text();
+    await recordCall("hubspot", { success: false, statusCode: res.status, errorMessage: body.slice(0, 500) });
     throw new Error(`HubSpot API error ${res.status}: ${body}`);
   }
+
+  await recordCall("hubspot", { success: true });
+  // Every real (non-cached) call refreshes the shared cooldown, not just
+  // manual ones — the board is shared across every CSA, so an auto-poll
+  // tick from any user's open tab already refreshed the data for everyone,
+  // and the Refresh button should reflect that instead of allowing an
+  // immediate redundant call right after.
+  await markRefreshed("hubspot");
   return res.json() as Promise<T>;
 }

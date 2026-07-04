@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { formatRelativeTime, PIPELINE_MAP, type HubspotOwner } from "@/lib/hubspot";
@@ -22,15 +23,22 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
   return json;
 });
 
-// Auto-refresh every 30 minutes — HubSpot data here doesn't change fast enough
-// to warrant tighter polling, and the manual refresh button covers "I need
-// this now." Focus/reconnect revalidation is intentionally OFF: tabbing in
-// and out (or a brief network drop on wake) would otherwise trigger a fetch
-// on every switch, and once the server cache TTL lapses that fetch hits
-// HubSpot directly — the 30-minute interval + manual refresh below are the
-// only ways this ever re-fetches.
+// Fallback auto-refresh interval used only until /api/integrations/hubspot/polling
+// resolves — after that, the interval (and whether auto-polling runs at all)
+// comes from the shared api_integrations settings an admin controls. Focus/
+// reconnect revalidation is intentionally OFF: tabbing in and out would
+// otherwise trigger a fetch on every switch, and once the server cache TTL
+// lapses that fetch hits HubSpot directly — the interval + manual refresh
+// below are the only ways this ever re-fetches.
 const REFRESH_INTERVAL = 30 * 60_000;
-const COOLDOWN_SECONDS = 60;
+
+interface PollingSettings {
+  autoPollIntervalMinutes: number;
+  autoPollPaused: boolean;
+  manualRefreshPaused: boolean;
+  pausedAll: boolean;
+  nextRefreshAllowedAt: string | null;
+}
 
 type PipelineKey = "basic" | "pro";
 type SortMode = "recent" | "alpha" | "date";
@@ -56,11 +64,10 @@ export function OnboardingGrid({
   const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
   const [trackDeal, setTrackDeal] = React.useState<OnboardingListItem | null>(null);
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
-  const [cooldown, setCooldown] = React.useState(0);
   const [, forceTick] = React.useState(0);
 
-  // "Updated Xs ago" would otherwise freeze until the next poll/re-render —
-  // tick every second purely to recompute that label live.
+  // "Updated Xs ago" and the cooldown countdown would otherwise freeze until
+  // the next poll/re-render — tick every second purely to recompute those live.
   React.useEffect(() => {
     const t = setInterval(() => forceTick((n) => n + 1), 1000);
     return () => clearInterval(t);
@@ -71,11 +78,10 @@ export function OnboardingGrid({
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  React.useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = setInterval(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
-    return () => clearInterval(t);
-  }, [cooldown]);
+  const { data: polling } = useSWR<PollingSettings>("/api/integrations/hubspot/polling", fetcher, {
+    refreshInterval: 60_000,
+    revalidateOnFocus: false,
+  });
 
   const dealsKey = React.useMemo(() => {
     const params = new URLSearchParams({ pipeline });
@@ -84,8 +90,17 @@ export function OnboardingGrid({
     return `/api/hubspot/deals?${params.toString()}`;
   }, [pipeline, owner, search]);
 
+  // Auto-refresh pauses entirely (refreshInterval 0) when an admin has paused
+  // all polling or auto polling specifically; otherwise the interval comes
+  // live from the shared api_integrations setting, not a hardcoded constant.
+  const autoRefreshInterval = !polling
+    ? REFRESH_INTERVAL
+    : polling.pausedAll || polling.autoPollPaused
+      ? 0
+      : polling.autoPollIntervalMinutes * 60_000;
+
   const { data, error, isLoading, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
-    refreshInterval: REFRESH_INTERVAL,
+    refreshInterval: autoRefreshInterval,
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 15_000,
@@ -129,10 +144,34 @@ export function OnboardingGrid({
     }));
   }, [pipelineDef, deals]);
 
+  // Cooldown is derived from the server's shared next_refresh_allowed_at
+  // (returned on every deals response) rather than a local click timestamp,
+  // so every open tab's countdown reads identically.
+  const cooldownSeconds = data?.nextRefreshAllowedAt
+    ? Math.max(0, Math.ceil((new Date(data.nextRefreshAllowedAt).getTime() - Date.now()) / 1000))
+    : 0;
+  const manualRefreshDisabled =
+    cooldownSeconds > 0 || Boolean(data?.manualRefreshPaused) || Boolean(data?.pausedAll) || Boolean(polling?.manualRefreshPaused) || Boolean(polling?.pausedAll);
+  const manualRefreshReason = data?.pausedAll || polling?.pausedAll
+    ? "All polling is paused by an admin."
+    : data?.manualRefreshPaused || polling?.manualRefreshPaused
+      ? "Manual refresh is paused by an admin."
+      : undefined;
+
   async function handleManualRefresh() {
-    if (cooldown > 0) return;
-    await mutate();
-    setCooldown(COOLDOWN_SECONDS);
+    if (manualRefreshDisabled) return;
+    try {
+      const url = dealsKey.includes("?") ? `${dealsKey}&manual=1` : `${dealsKey}?manual=1`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Refresh failed.");
+        return;
+      }
+      await mutate(json, { revalidate: false });
+    } catch {
+      toast.error("Refresh failed.");
+    }
   }
 
   function handleTracked(dealId: string) {
@@ -153,9 +192,16 @@ export function OnboardingGrid({
             <span className="whitespace-nowrap text-xs text-muted-foreground">
               {data?.fetchedAt ? `Updated ${formatRelativeTime(new Date(data.fetchedAt).toISOString())}` : "Loading…"}
             </span>
-            <Button size="sm" variant="outline" disabled={cooldown > 0} onClick={handleManualRefresh} className="gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={manualRefreshDisabled}
+              onClick={handleManualRefresh}
+              className="gap-1.5"
+              title={manualRefreshReason ?? (cooldownSeconds > 0 ? "Wait for the shared cooldown to clear." : undefined)}
+            >
               <RefreshCw className="h-3.5 w-3.5" />
-              {cooldown > 0 ? `Refresh (${cooldown}s)` : "Refresh"}
+              {cooldownSeconds > 0 ? `Refresh (${cooldownSeconds}s)` : "Refresh"}
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5" asChild>
               <a href="https://app.hubspot.com/contacts/44006894/objects/0-162" target="_blank" rel="noreferrer">
