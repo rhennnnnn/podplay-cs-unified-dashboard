@@ -44,3 +44,6 @@ HANDOFF.md
 
 # MCP server config (contains Supabase access token — never commit)
 .mcp.json
+
+# OPS Guide seed source — local only, never pushed
+Operation Guide V2.html

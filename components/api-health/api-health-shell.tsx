@@ -149,19 +149,20 @@ function IntegrationCard({
         <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
       </CardHeader>
       <CardContent className="space-y-5">
-        {pct !== null && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {integration.requests_used_today} / {integration.requests_limit_per_day} today
-              </span>
-              <span>{Math.round(pct)}%</span>
-            </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {integration.requests_used_today} {integration.requests_used_today === 1 ? "request" : "requests"} today
+              {integration.requests_limit_per_day !== null && ` / ${integration.requests_limit_per_day} limit`}
+            </span>
+            {pct !== null && <span>{Math.round(pct)}%</span>}
+          </div>
+          {pct !== null && (
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${pct}%` }} />
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {integration.last_error_message && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs">
