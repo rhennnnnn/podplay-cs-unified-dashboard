@@ -17,8 +17,15 @@ export async function GET(request: NextRequest) {
   }
 
   const company = request.nextUrl.searchParams.get("company");
+
+  // No company known yet (e.g. the detail sheet fired this before its own
+  // deal-detail fetch resolved a company name) — nothing to join, but the
+  // caller still needs the real mrpStatus (access_pending, etc.) rather than
+  // an error, so it can render the correct empty state instead of a generic
+  // "unavailable" fallback.
   if (!company) {
-    return NextResponse.json({ error: "?company= is required." }, { status: 400 });
+    const mrpStatus = await getIntegrationStatus("mrp_sheets");
+    return NextResponse.json({ record: null, mrpStatus });
   }
 
   if (isJoinedCacheStale()) {

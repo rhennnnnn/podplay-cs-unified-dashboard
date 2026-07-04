@@ -66,20 +66,26 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   try {
     const result = await withCache(`deal:${id}`, 45_000, async () => {
-      const record = await hubspotFetch<OnboardingDetail>(
-        `/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/${id}?properties=${DETAIL_PROPERTIES.join(",")}`
-      );
+      // The main record fetch and the association-ID lookups both only need
+      // `id` — no reason to wait for the record before starting these.
+      const [record, [contactIds, companyIds, noteIds]] = await Promise.all([
+        hubspotFetch<OnboardingDetail>(
+          `/crm/v3/objects/${ONBOARDING_OBJECT_TYPE}/${id}?properties=${DETAIL_PROPERTIES.join(",")}`
+        ),
+        // Sheet only ever shows the first contact/company — cap well under HubSpot's
+        // 100-input batch/read limit rather than pulling every association on
+        // records with unusually large contact/company lists.
+        Promise.all([
+          getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "contacts"),
+          getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "companies"),
+          getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "notes"),
+        ]).then(([c, co, n]) => [c.slice(0, 10), co.slice(0, 10), n] as const),
+      ]);
 
-      // Sheet only ever shows the first contact/company — cap well under HubSpot's
-      // 100-input batch/read limit rather than pulling every association on
-      // records with unusually large contact/company lists.
-      const [contactIds, companyIds, noteIds] = await Promise.all([
-        getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "contacts"),
-        getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "companies"),
-        getAssociatedIds(ONBOARDING_OBJECT_TYPE, id, "notes"),
-      ]).then(([c, co, n]) => [c.slice(0, 10), co.slice(0, 10), n] as const);
-
-      const [contacts, companies, notes] = await Promise.all([
+      // getContactFormSubmissions only needs contactIds (already known) — it
+      // doesn't depend on the batchReadObjects contact-properties call below,
+      // so run it concurrently instead of waiting on that unrelated fetch.
+      const [contacts, companies, notes, formSubmissionsByContactId] = await Promise.all([
         batchReadObjects<{
           firstname: string | null;
           lastname: string | null;
@@ -109,17 +115,20 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           noteIds.slice(0, 5),
           ["hs_note_body", "hs_timestamp", "hubspot_owner_id"]
         ),
+        mapLimit(contactIds, 4, (contactId) =>
+          getContactFormSubmissions(contactId).then((submissions) => [contactId, submissions] as const)
+        ),
       ]);
 
+      const formSubmissionsMap = new Map(formSubmissionsByContactId);
       const contactList = Object.values(contacts);
-      const formSubmissionsByContact = await mapLimit(contactList, 4, (c) => getContactFormSubmissions(c.id));
 
       return {
         deal: record,
-        contacts: contactList.map((c, i) => ({
+        contacts: contactList.map((c) => ({
           id: c.id,
           ...c.properties,
-          formSubmissions: formSubmissionsByContact[i],
+          formSubmissions: formSubmissionsMap.get(c.id) ?? [],
         })),
         companies: Object.values(companies).map((c) => ({ id: c.id, ...c.properties })),
         notes: Object.values(notes)

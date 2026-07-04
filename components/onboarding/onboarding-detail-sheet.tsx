@@ -63,11 +63,19 @@ export function OnboardingDetailSheet({
 }: OnboardingDetailSheetProps) {
   const { data, isLoading } = useSWR<DealDetailResponse>(dealId ? `/api/hubspot/deals/${dealId}` : null, fetcher);
   const { data: activityData } = useSWR<ActivityResponse>(dealId ? `/api/hubspot/activity/${dealId}` : null, fetcher);
-  const companyName = data?.companies[0]?.name ?? null;
+  // Prefer the company name already sitting in the board's list item — it's
+  // available the instant the sheet opens, unlike data?.companies[0]?.name
+  // which has to wait for the deal-detail fetch to resolve. This lets the MRP
+  // fetch below start in parallel with deal-detail/activity instead of
+  // waiting on deal-detail purely to learn a name we already had.
+  const companyName = listItem?.company?.name ?? data?.companies[0]?.name ?? null;
   // Reads the cached joined HubSpot+MRP result — not a fresh per-open Sheets
   // API call. One sync run (lib/onboarding-sync.ts) serves every open sheet.
-  const { data: mrpData, isLoading: mrpLoading } = useSWR<MrpJoinedResponse>(
-    companyName ? `/api/mrp?company=${encodeURIComponent(companyName)}` : null,
+  // Always fires (even with an empty company) once dealId is set, so the
+  // route can still report the real mrpStatus (e.g. access_pending) instead
+  // of the fetch silently never happening when a company name isn't known.
+  const { data: mrpData, error: mrpError, isLoading: mrpLoading } = useSWR<MrpJoinedResponse>(
+    dealId ? `/api/mrp?company=${encodeURIComponent(companyName ?? "")}` : null,
     fetcher
   );
   const [trackedLocationId, setTrackedLocationId] = React.useState<string | null>(null);
@@ -313,14 +321,14 @@ export function OnboardingDetailSheet({
                     <Skeleton className="h-4 w-2/3" />
                     <Skeleton className="h-4 w-1/2" />
                   </div>
+                ) : mrpError ? (
+                  <p className="text-sm text-muted-foreground">MRP data unavailable.</p>
                 ) : mrpData?.mrpStatus === "access_pending" ? (
                   <p className="text-sm text-muted-foreground">
                     MRP access pending — waiting on Google Sheets permission.
                   </p>
-                ) : mrpData && !mrpData.record?.mrp ? (
+                ) : !mrpData?.record?.mrp ? (
                   <p className="text-sm text-muted-foreground">No matching MRP record found.</p>
-                ) : !mrpData?.record ? (
-                  <p className="text-sm text-muted-foreground">MRP data unavailable.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Hardware Delivery Date" value={mrpData.record.mrp?.hardwareDeliveryDate} />
