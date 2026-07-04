@@ -146,6 +146,7 @@ export async function GET(req: NextRequest) {
     const settings = await getIntegrationSettings("hubspot");
     return NextResponse.json({
       ...result,
+      pipeline: pipelineParam,
       fetchedAt: getCacheTimestamp(cacheKey),
       nextRefreshAllowedAt: settings?.next_refresh_allowed_at ?? null,
       manualRefreshPaused: settings?.manual_refresh_paused ?? false,

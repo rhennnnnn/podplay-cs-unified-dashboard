@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import useSWR from "swr";
+import useSWR, { preload } from "swr";
 import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
@@ -92,12 +92,28 @@ export function OnboardingGrid({
   const [combinedNextRefreshAllowedAt, setCombinedNextRefreshAllowedAt] = React.useState<string | null>(null);
   const [mrpSkippedNote, setMrpSkippedNote] = React.useState(false);
 
-  const dealsKey = React.useMemo(() => {
-    const params = new URLSearchParams({ pipeline });
-    if (owner !== "all") params.set("owner", owner);
-    if (search) params.set("search", search);
-    return `/api/hubspot/deals?${params.toString()}`;
-  }, [pipeline, owner, search]);
+  const buildDealsKey = React.useCallback(
+    (forPipeline: PipelineKey) => {
+      const params = new URLSearchParams({ pipeline: forPipeline });
+      if (owner !== "all") params.set("owner", owner);
+      if (search) params.set("search", search);
+      return `/api/hubspot/deals?${params.toString()}`;
+    },
+    [owner, search]
+  );
+  const dealsKey = React.useMemo(() => buildDealsKey(pipeline), [buildDealsKey, pipeline]);
+
+  // The inactive pipeline tab is never fetched until clicked, so the first
+  // switch always eats a cold multi-second fetch. Warm its cache in the
+  // background shortly after the active tab settles — low priority, doesn't
+  // block or compete with the visible tab's own load.
+  React.useEffect(() => {
+    const otherPipeline: PipelineKey = pipeline === "basic" ? "pro" : "basic";
+    const t = setTimeout(() => {
+      preload(buildDealsKey(otherPipeline), fetcher);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [pipeline, buildDealsKey]);
 
   // Auto-refresh pauses entirely (refreshInterval 0) when an admin has paused
   // all polling or auto polling specifically; otherwise the interval comes
@@ -108,13 +124,20 @@ export function OnboardingGrid({
       ? 0
       : polling.autoPollIntervalMinutes * 60_000;
 
-  const { data, error, isLoading, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
+  const { data, error, mutate } = useSWR<DealsResponse>(dealsKey, fetcher, {
     refreshInterval: autoRefreshInterval,
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 15_000,
     keepPreviousData: true,
   });
+
+  // keepPreviousData keeps `data` populated with the OLD pipeline's deals while
+  // the new pipeline's fetch is in flight — filtering those against the new
+  // pipeline's stage IDs mismatches almost everything, rendering a
+  // near-empty grid that looks broken instead of loading. Only treat `data`
+  // as usable once it actually echoes back the currently-selected pipeline.
+  const currentData = data?.pipeline === pipeline ? data : undefined;
 
   const { data: ownersData } = useSWR<OwnersResponse>("/api/hubspot/owners", fetcher, {
     revalidateOnFocus: false,
@@ -127,7 +150,7 @@ export function OnboardingGrid({
   }, [ownersData]);
 
   const deals = React.useMemo(() => {
-    const list = data?.deals ?? [];
+    const list = currentData?.deals ?? [];
     const sorted = [...list];
     if (sortMode === "alpha") {
       sorted.sort((a, b) => (a.properties.hs_name ?? "").localeCompare(b.properties.hs_name ?? ""));
@@ -143,7 +166,7 @@ export function OnboardingGrid({
     }
     // "recent" keeps the API's own hs_lastmodifieddate-desc order.
     return sorted;
-  }, [data, sortMode]);
+  }, [currentData, sortMode]);
   const pipelineDef = PIPELINE_MAP[pipeline];
 
   const columns = React.useMemo(() => {
@@ -210,7 +233,7 @@ export function OnboardingGrid({
           </div>
           <div className="flex items-center gap-2">
             <span className="whitespace-nowrap text-xs text-muted-foreground">
-              {data?.fetchedAt ? `Updated ${formatRelativeTime(new Date(data.fetchedAt).toISOString())}` : "Loading…"}
+              {currentData?.fetchedAt ? `Updated ${formatRelativeTime(new Date(currentData.fetchedAt).toISOString())}` : "Loading…"}
             </span>
             <Button
               size="sm"
@@ -275,12 +298,12 @@ export function OnboardingGrid({
                 <SelectItem value="date">Opening Date</SelectItem>
               </SelectContent>
             </Select>
-            {data && <Badge variant="secondary">{deals.length} total</Badge>}
+            {currentData && <Badge variant="secondary">{deals.length} total</Badge>}
           </div>
         </div>
       </div>
 
-      {error && !data && (
+      {error && !currentData && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load — try refreshing.
           <Button size="sm" variant="outline" className="ml-3" onClick={() => mutate()}>
@@ -289,7 +312,7 @@ export function OnboardingGrid({
         </div>
       )}
 
-      {isLoading && !data && (
+      {!currentData && !error && (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[60vh] w-72 shrink-0 rounded-xl" />
@@ -297,7 +320,7 @@ export function OnboardingGrid({
         </div>
       )}
 
-      {data && deals.length === 0 && (
+      {currentData && deals.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-12 text-center">
           <p className="font-medium">No onboardings match your filters</p>
           <p className="text-sm text-muted-foreground">Try clearing filters or search.</p>

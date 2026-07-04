@@ -18,6 +18,7 @@ export interface OnboardingListItem {
 }
 
 export interface DealsResponse {
+  pipeline: string;
   deals: OnboardingListItem[];
   after: string | null;
   total: number;
