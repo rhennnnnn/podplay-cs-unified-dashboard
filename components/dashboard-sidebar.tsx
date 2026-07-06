@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Link2, Wrench, Users, LogOut, Menu, Activity } from "lucide-react";
+import { Home, ClipboardList, Link2, Wrench, Users, LogOut, Menu, Activity, Globe } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,34 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_NAV_ITEM = { href: "/dashboard/settings/api-health", label: "API Health", icon: Activity };
+
+// Turn "john.lester@podplay.app" into "John Lester" + initials "JL".
+function displayNameFromEmail(email: string) {
+  const local = (email.split("@")[0] ?? "").trim();
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  const name = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+  return name || email;
+}
+
+function initialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/);
+  const initials = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
+  return initials.toUpperCase() || "?";
+}
+
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-3 px-5 py-5">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3b82f6] to-[#7c3aed] shadow-lg shadow-[#3b82f6]/25">
+        <Globe className="h-5 w-5 text-white" />
+      </div>
+      <div className="leading-tight">
+        <div className="text-[15px] font-semibold text-white">PodPlay CS</div>
+        <div className="text-[11px] text-slate-400">Unified Dashboard</div>
+      </div>
+    </div>
+  );
+}
 
 function NavLinks({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: boolean }) {
   const pathname = usePathname();
@@ -38,13 +66,13 @@ function NavLinks({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: b
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               isActive
-                ? "bg-sidebar-accent text-white"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-white"
+                ? "bg-white/10 text-white"
+                : "text-slate-400 hover:bg-white/5 hover:text-white"
             )}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className="h-[18px] w-[18px] shrink-0" />
             {item.label}
           </Link>
         );
@@ -53,18 +81,32 @@ function NavLinks({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: b
   );
 }
 
-function SignOutButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+function UserCard({ email, loading, onSignOut }: { email: string; loading: boolean; onSignOut: () => void }) {
+  const name = displayNameFromEmail(email);
+  const initials = initialsFromName(name);
+
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={loading}
-      onClick={onClick}
-      className="w-full justify-start gap-2 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-white"
-    >
-      <LogOut className="h-4 w-4" />
-      {loading ? "Signing out…" : "Sign out"}
-    </Button>
+    <div className="border-t border-white/10 p-3">
+      <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] text-xs font-semibold text-white">
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-sm font-medium text-white">{name}</div>
+          <div className="truncate text-xs text-slate-400">{email}</div>
+        </div>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={onSignOut}
+          aria-label="Sign out"
+          title={loading ? "Signing out…" : "Sign out"}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -82,13 +124,10 @@ function SidebarBody({ email, isAdmin, onNavigate }: { email: string; isAdmin: b
   }
 
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="px-4 py-5 text-lg font-semibold text-white">PodPlay CS</div>
+    <div className="flex h-full flex-col bg-[#0b1220] text-slate-300">
+      <BrandMark />
       <NavLinks onNavigate={onNavigate} isAdmin={isAdmin} />
-      <div className="mt-auto border-t border-sidebar-border p-3">
-        <p className="truncate px-3 py-1 text-xs text-sidebar-foreground/60">{email}</p>
-        <SignOutButton loading={signingOut} onClick={handleSignOut} />
-      </div>
+      <UserCard email={email} loading={signingOut} onSignOut={handleSignOut} />
     </div>
   );
 }
@@ -98,23 +137,28 @@ export function DashboardSidebar({ email, isAdmin = false }: { email: string; is
 
   return (
     <>
-      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border md:block">
+      <aside className="hidden w-64 shrink-0 border-r border-white/10 md:block">
         <SidebarBody email={email} isAdmin={isAdmin} />
       </aside>
 
-      <div className="flex items-center gap-3 border-b bg-sidebar px-4 py-3 text-white md:hidden">
+      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0b1220] px-4 py-3 text-white md:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-white hover:bg-sidebar-accent">
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Open menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
+          <SheetContent side="left" className="w-64 border-none p-0">
             <SidebarBody email={email} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
-        <span className="text-sm font-semibold">PodPlay CS</span>
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#7c3aed]">
+            <Globe className="h-4 w-4 text-white" />
+          </div>
+          <span className="text-sm font-semibold">PodPlay CS</span>
+        </div>
       </div>
     </>
   );
