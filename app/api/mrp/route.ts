@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { getIntegrationStatus } from "@/lib/api-health";
-import { getJoinedRecord, isJoinedCacheStale, runOnboardingSync } from "@/lib/onboarding-sync";
+import { getMrpRecordForCompany } from "@/lib/onboarding-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -28,12 +28,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ record: null, mrpStatus });
   }
 
-  if (isJoinedCacheStale()) {
-    await runOnboardingSync("auto");
-  }
-
-  const record = await getJoinedRecord(company);
+  // Match directly against the cached MRP records (stale-while-revalidate) —
+  // no HubSpot-sweep join in the path, so a company present in the sheet
+  // always resolves regardless of how its name was swept.
+  const mrp = await getMrpRecordForCompany(company);
   const mrpStatus = await getIntegrationStatus("mrp_sheets");
 
-  return NextResponse.json({ record, mrpStatus });
+  return NextResponse.json({ record: { companyName: company, mrp }, mrpStatus });
 }
