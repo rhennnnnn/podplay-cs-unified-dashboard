@@ -19,7 +19,8 @@ import { IntegrationPausedError, markRefreshed, recordCall, shouldAllowPoll, typ
 export interface MrpRecord {
   clubName: string;
   hardwareDeliveryDate: string | null;
-  status: string | null;
+  deliveredStatus: string | null;
+  installStartedStatus: string | null;
 }
 
 const SHEET_TAB = process.env.MRP_SHEET_TAB || "DeploymentStatus";
@@ -112,7 +113,8 @@ export async function getHardwareRecords(trigger: PollTrigger = "auto"): Promise
     "hardware delivery date",
     "delivery date",
   ]);
-  const statusCol = findColumn(headers, ["status"]);
+  const deliveredCol = findColumn(headers, ["delivered", "delivered status", "hardware delivered"]);
+  const installCol = findColumn(headers, ["install started", "installation started", "install status"]);
 
   return rows
     .slice(1)
@@ -120,7 +122,8 @@ export async function getHardwareRecords(trigger: PollTrigger = "auto"): Promise
     .map((row) => ({
       clubName: row[clubCol],
       hardwareDeliveryDate: deliveryCol !== -1 ? row[deliveryCol] || null : null,
-      status: statusCol !== -1 ? row[statusCol] || null : null,
+      deliveredStatus: deliveredCol !== -1 ? row[deliveredCol] || null : null,
+      installStartedStatus: installCol !== -1 ? row[installCol] || null : null,
     }));
 }
 
