@@ -92,7 +92,6 @@ export function OnboardingGrid({
     revalidateOnFocus: true,
   });
   const [combinedNextRefreshAllowedAt, setCombinedNextRefreshAllowedAt] = React.useState<string | null>(null);
-  const [mrpSkippedNote, setMrpSkippedNote] = React.useState(false);
 
   const buildDealsKey = React.useCallback(
     (forPipeline: PipelineKey) => {
@@ -210,7 +209,6 @@ export function OnboardingGrid({
         return;
       }
       setCombinedNextRefreshAllowedAt(json.nextRefreshAllowedAt);
-      setMrpSkippedNote(json.mrp === "skipped");
       // The sync route already refreshed HubSpot's cache server-side — a
       // plain revalidate here now hits that warm cache instead of HubSpot.
       await mutate();
@@ -244,7 +242,7 @@ export function OnboardingGrid({
               <RefreshCw className="h-3.5 w-3.5" />
               {cooldownSeconds > 0 ? `Refresh (${cooldownSeconds}s)` : "Refresh"}
             </Button>
-            {(mrpSkippedNote || mrpPolling?.pausedAll || mrpPolling?.autoPollPaused) && (
+            {(mrpPolling?.pausedAll || mrpPolling?.autoPollPaused) && (
               <span className="whitespace-nowrap text-xs text-muted-foreground">MRP sync skipped — paused</span>
             )}
             <Button size="sm" variant="outline" className="gap-1.5" asChild>
