@@ -232,14 +232,28 @@ export async function getHardwareRecords(trigger: PollTrigger = "auto"): Promise
 }
 
 // Business-name match. HubSpot company names carry the same business identity
-// as the sheet's "Club" column ("Performance Pickleball RVA"), so normalize
-// both to lowercase alphanumerics and compare. Exact normalized equality first;
-// then a containment fallback for trailing-suffix drift ("... LLC", "... Inc").
+// as the sheet's "Club" column ("Performance Pickleball RVA").
+//
+// Matching is token-based, NOT substring-based: a plain substring/containment
+// test produces false positives — e.g. "Greystone Pickleball Club" literally
+// contains the substring "onepickleballclub" (…greyst-ONE-PICKleball-club…),
+// wrongly matching "One+ Pickleball Club". Instead we drop generic filler
+// words ("pickleball", "club", "llc", …) and compare the DISTINCTIVE tokens.
+
+const GENERIC_TOKENS = new Set(["pickleball", "club", "the", "llc", "inc", "co", "ltd", "and", "of"]);
+
 function normalize(name: string): string {
-  return name
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Distinctive tokens: lowercase alphanumeric words with generic filler removed,
+// sorted so word order doesn't matter. Empty if a name is ALL generic words.
+function distinctiveKey(name: string): string {
+  const tokens = name
     .toLowerCase()
-    .replace(/\b(llc|inc|co|ltd)\b/g, "")
-    .replace(/[^a-z0-9]/g, "");
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t && !GENERIC_TOKENS.has(t));
+  return tokens.sort().join("|");
 }
 
 export function matchByCompanyName(
@@ -247,21 +261,16 @@ export function matchByCompanyName(
   records: MrpRecord[]
 ): MrpRecord | null {
   if (!hubspotCompanyName) return null;
+
+  // 1. Exact normalized equality (fast, unambiguous).
   const target = normalize(hubspotCompanyName);
   if (!target) return null;
-
   const exact = records.find((r) => normalize(r.club) === target);
   if (exact) return exact;
 
-  // Containment fallback — guard on a reasonable length so short names don't
-  // match everything.
-  if (target.length >= 5) {
-    return (
-      records.find((r) => {
-        const c = normalize(r.club);
-        return c.length >= 5 && (c.includes(target) || target.includes(c));
-      }) ?? null
-    );
-  }
-  return null;
+  // 2. Distinctive-token equality — tolerates trailing "Club"/"Pickleball"
+  //    differences without the substring false positives.
+  const targetKey = distinctiveKey(hubspotCompanyName);
+  if (!targetKey) return null;
+  return records.find((r) => distinctiveKey(r.club) === targetKey) ?? null;
 }
