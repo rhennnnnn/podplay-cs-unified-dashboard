@@ -226,11 +226,7 @@ export function OnboardingGrid({
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">HubSpot Onboarding</h1>
-            <p className="text-sm text-muted-foreground">Read-only board synced from HubSpot.</p>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex items-center gap-2">
             <span className="whitespace-nowrap text-xs text-muted-foreground">
               {currentData?.fetchedAt ? `Updated ${formatRelativeTime(new Date(currentData.fetchedAt).toISOString())}` : "Loading…"}

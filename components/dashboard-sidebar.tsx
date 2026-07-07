@@ -37,12 +37,12 @@ function initialsFromName(name: string) {
 function BrandMark() {
   return (
     <div className="flex items-center gap-3 px-5 py-5">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3b82f6] to-[#7c3aed] shadow-lg shadow-[#3b82f6]/25">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#2563eb] to-[#7c3aed] shadow-lg shadow-[#3b82f6]/25">
         <Globe className="h-5 w-5 text-white" />
       </div>
       <div className="leading-tight">
         <div className="text-[15px] font-semibold text-white">PodPlay CS</div>
-        <div className="text-[11px] text-slate-400">Unified Dashboard</div>
+        <div className="text-[11px] text-[#93a3c9]">Unified Dashboard</div>
       </div>
     </div>
   );
@@ -69,7 +69,7 @@ function NavLinks({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: b
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               isActive
                 ? "bg-white/10 text-white"
-                : "text-slate-400 hover:bg-white/5 hover:text-white"
+                : "text-[#93a3c9] hover:bg-white/5 hover:text-white"
             )}
           >
             <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -88,12 +88,12 @@ function UserCard({ email, loading, onSignOut }: { email: string; loading: boole
   return (
     <div className="border-t border-white/10 p-3">
       <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] text-xs font-semibold text-white">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2563eb] to-[#7c3aed] text-xs font-semibold text-white">
           {initials}
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-sm font-medium text-white">{name}</div>
-          <div className="truncate text-xs text-slate-400">{email}</div>
+          <div className="truncate text-xs text-[#93a3c9]">{email}</div>
         </div>
         <button
           type="button"
@@ -101,7 +101,7 @@ function UserCard({ email, loading, onSignOut }: { email: string; loading: boole
           onClick={onSignOut}
           aria-label="Sign out"
           title={loading ? "Signing out…" : "Sign out"}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#93a3c9] transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
         >
           <LogOut className="h-4 w-4" />
         </button>
@@ -124,7 +124,7 @@ function SidebarBody({ email, isAdmin, onNavigate }: { email: string; isAdmin: b
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#0b1220] text-slate-300">
+    <div className="flex h-full flex-col bg-[#0F1B3D] text-[#93a3c9]">
       <BrandMark />
       <NavLinks onNavigate={onNavigate} isAdmin={isAdmin} />
       <UserCard email={email} loading={signingOut} onSignOut={handleSignOut} />
@@ -141,7 +141,7 @@ export function DashboardSidebar({ email, isAdmin = false }: { email: string; is
         <SidebarBody email={email} isAdmin={isAdmin} />
       </aside>
 
-      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0b1220] px-4 py-3 text-white md:hidden">
+      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0F1B3D] px-4 py-3 text-white md:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
@@ -154,7 +154,7 @@ export function DashboardSidebar({ email, isAdmin = false }: { email: string; is
           </SheetContent>
         </Sheet>
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#7c3aed]">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#2563eb] to-[#7c3aed]">
             <Globe className="h-4 w-4 text-white" />
           </div>
           <span className="text-sm font-semibold">PodPlay CS</span>

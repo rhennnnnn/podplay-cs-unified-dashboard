@@ -42,13 +42,11 @@ export default async function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm text-muted-foreground">Client Opening Tracker summary at a glance.</p>
+      {callerIsAdmin && (
+        <div className="flex justify-end">
+          <ApiHealthChip />
         </div>
-        {callerIsAdmin && <ApiHealthChip />}
-      </div>
+      )}
 
       {error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

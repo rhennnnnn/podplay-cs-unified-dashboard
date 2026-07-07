@@ -439,13 +439,7 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster, rosterM
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Client Opening Tracker</h1>
-          <p className="text-sm text-muted-foreground">
-            Track client location opening dates, status, and CS tracking.
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-2">
         <Button
           className="gap-2"
           onClick={() => {
