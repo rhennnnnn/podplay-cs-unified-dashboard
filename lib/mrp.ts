@@ -24,7 +24,7 @@ export interface MrpRecord {
 }
 
 const SHEET_TAB = process.env.MRP_SHEET_TAB || "DeploymentStatus";
-const RANGE = `${SHEET_TAB}!A1:Z`;
+const RANGE = `${SHEET_TAB}!A6:Z`;
 
 let cachedAuth: InstanceType<typeof google.auth.JWT> | null = null;
 function getAuthClient(): InstanceType<typeof google.auth.JWT> | null {
@@ -113,18 +113,21 @@ export async function getHardwareRecords(trigger: PollTrigger = "auto"): Promise
     "hardware delivery date",
     "delivery date",
   ]);
-  const deliveredCol = findColumn(headers, ["delivered", "delivered status", "hardware delivered"]);
-  const installCol = findColumn(headers, ["install started", "installation started", "install status"]);
+  const statusCol = findColumn(headers, ["status"]);
 
   return rows
-    .slice(1)
-    .filter((row) => row[clubCol])
-    .map((row) => ({
-      clubName: row[clubCol],
-      hardwareDeliveryDate: deliveryCol !== -1 ? row[deliveryCol] || null : null,
-      deliveredStatus: deliveredCol !== -1 ? row[deliveredCol] || null : null,
-      installStartedStatus: installCol !== -1 ? row[installCol] || null : null,
-    }));
+  .slice(1)
+  .filter((row) => row[clubCol])
+  .map((row) => ({
+    clubName: row[clubCol],
+    hardwareDeliveryDate: deliveryCol !== -1 ? row[deliveryCol] || null : null,
+
+    // Use the single Status column for the Delivered badge
+    deliveredStatus: statusCol !== -1 ? row[statusCol] || null : null,
+
+    // No Install Started column in the sheet
+    installStartedStatus: null,
+  }));
 }
 
 // Generic normalize — lowercase, drop common suffixes and non-alphanumerics.
