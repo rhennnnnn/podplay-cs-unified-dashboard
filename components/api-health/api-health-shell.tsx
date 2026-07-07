@@ -45,10 +45,13 @@ interface ApiHealthShellProps {
 }
 
 export function ApiHealthShell({ initialIntegrations }: ApiHealthShellProps) {
+  // revalidateOnFocus keeps every open admin session/browser in sync: returning
+  // to this tab picks up another admin's pause change immediately instead of
+  // waiting out the 30s interval.
   const { data, mutate } = useSWR<{ integrations: ApiIntegration[] }>("/api/admin/api-health", fetcher, {
     fallbackData: { integrations: initialIntegrations },
     refreshInterval: 30_000,
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
   });
 
   const integrations = data?.integrations ?? initialIntegrations;
@@ -56,26 +59,39 @@ export function ApiHealthShell({ initialIntegrations }: ApiHealthShellProps) {
   const issues = integrations.filter((i) => NEEDS_ATTENTION.includes(i.status) || (usagePct(i) ?? 0) >= 90);
 
   async function patch(id: string, body: Record<string, unknown>) {
-    // Optimistic update — reflect the change immediately, then reconcile
-    // with the server's response (or roll back on error).
-    const optimistic = {
-      integrations: integrations.map((i) => (i.id === id ? { ...i, ...body } : i)),
-    };
-    await mutate(optimistic, { revalidate: false });
-
+    // Run the PATCH *through* SWR's mutation so the toggle can't desync: the
+    // 30s background revalidation (and any other tab's poll) is suspended for
+    // the duration of this mutation, and the cache is populated from the
+    // server's authoritative row — not blindly re-fetched afterward, where a
+    // concurrent in-flight GET that started pre-write could clobber the new
+    // value and snap the switch back (the "toggle twice to fix it" bug).
     try {
-      const res = await fetch(`/api/admin/api-health/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Update failed");
+      await mutate(
+        async (current) => {
+          const res = await fetch(`/api/admin/api-health/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "Update failed");
+          const base = current?.integrations ?? integrations;
+          return { integrations: base.map((i) => (i.id === id ? (json.integration as ApiIntegration) : i)) };
+        },
+        {
+          optimisticData: (current) => ({
+            integrations: (current?.integrations ?? integrations).map((i) =>
+              i.id === id ? { ...i, ...body } : i
+            ),
+          }),
+          rollbackOnError: true,
+          revalidate: false,
+          populateCache: true,
+        }
+      );
       toast.success("Settings updated.");
-      await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update settings.");
-      await mutate();
     }
   }
 

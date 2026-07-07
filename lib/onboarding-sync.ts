@@ -7,6 +7,7 @@ import {
   batchReadAssociations,
   batchReadObjects,
   hubspotFetch,
+  invalidateCache,
   ONBOARDING_OBJECT_TYPE,
   withCache,
 } from "@/lib/hubspot";
@@ -23,8 +24,9 @@ export interface SyncOutcome {
   mrp: "ran" | "skipped" | "error";
 }
 
-const JOINED_TTL_MS = 5 * 60_000;
+const JOINED_TTL_MS = 10 * 60_000;
 const COMPANIES_CACHE_KEY = "onboarding-sync:companies";
+const MRP_RECORDS_CACHE_KEY = "onboarding-sync:mrp-records";
 
 let joinedMap: Map<string, JoinedOnboardingRecord> = new Map();
 let joinedMapExpires = 0;
@@ -73,6 +75,14 @@ async function listAllOnboardingCompanies(trigger: PollTrigger): Promise<string[
 export async function runOnboardingSync(trigger: PollTrigger): Promise<SyncOutcome> {
   const outcome: SyncOutcome = { hubspot: "skipped", mrp: "skipped" };
 
+  // A manual refresh must be a real, non-cached read of BOTH sources —
+  // drop the shared server cache entries so the withCache calls below actually
+  // re-fetch instead of serving the entry a prior auto-poll warmed.
+  if (trigger === "manual") {
+    invalidateCache(COMPANIES_CACHE_KEY);
+    invalidateCache(MRP_RECORDS_CACHE_KEY);
+  }
+
   let companyNames: string[] = [];
   const hubspotAllowed = await shouldAllowPoll("hubspot", trigger);
   if (hubspotAllowed) {
@@ -88,7 +98,10 @@ export async function runOnboardingSync(trigger: PollTrigger): Promise<SyncOutco
   const mrpAllowed = await shouldAllowPoll("mrp_sheets", trigger);
   if (mrpAllowed) {
     try {
-      mrpRecords = await getHardwareRecords(trigger);
+      // Shared server-side cache (same withCache utility HubSpot uses) so the
+      // Sheets API isn't hit on every sync — one real read serves every open
+      // session until the TTL lapses or a manual refresh invalidates it above.
+      mrpRecords = await withCache(MRP_RECORDS_CACHE_KEY, JOINED_TTL_MS, () => getHardwareRecords(trigger));
       outcome.mrp = "ran";
     } catch {
       outcome.mrp = "error";
