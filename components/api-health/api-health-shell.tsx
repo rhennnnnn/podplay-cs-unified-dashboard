@@ -81,13 +81,6 @@ export function ApiHealthShell({ initialIntegrations }: ApiHealthShellProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">API Health</h1>
-        <p className="text-sm text-muted-foreground">
-          Live status, usage, and polling controls for every external API this dashboard depends on.
-        </p>
-      </div>
-
       {issues.length > 0 && (
         <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

@@ -4,32 +4,32 @@
 
 @layer base {
   :root {
-    --background: 0 0% 94%;
-    --foreground: 90 8% 18%;
+    --background: 220 37% 97%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 90 8% 18%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 90 8% 18%;
-    --primary: 79 30% 35%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 79 15% 90%;
-    --secondary-foreground: 90 8% 18%;
-    --muted: 79 15% 90%;
-    --muted-foreground: 79 10% 45%;
-    --accent: 79 30% 35%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 79 15% 85%;
-    --input: 79 15% 85%;
-    --ring: 79 30% 35%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 213 36% 95%;
+    --secondary-foreground: 215 25% 27%;
+    --muted: 213 36% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 221 83% 53%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 216 25% 92%;
+    --input: 216 25% 92%;
+    --ring: 221 83% 53%;
     --radius: 0.75rem;
 
-    /* Sidebar always renders dark, regardless of light/dark theme */
-    --sidebar: 84 30% 6%;
-    --sidebar-foreground: 75 15% 75%;
-    --sidebar-border: 84 20% 12%;
-    --sidebar-accent: 84 25% 12%;
+    /* Navy sidebar from the swatch (Signal Direction) */
+    --sidebar: 224 61% 15%;
+    --sidebar-foreground: 223 72% 94%;
+    --sidebar-border: 226 46% 22%;
+    --sidebar-accent: 224 46% 20%;
   }
 
   .dark {

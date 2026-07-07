@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
+import { DashboardTopbar } from "@/components/dashboard-topbar";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,12 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <DashboardSidebar email={data.user.email ?? ""} isAdmin={isAdminUser} />
-      <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
-        {children}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <DashboardTopbar />
+        <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
