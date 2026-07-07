@@ -36,7 +36,7 @@ h2 { font-size: 17px; margin: 0; }
   padding: 12px 0; border-bottom: 1px solid #e3e6ea; margin-bottom: 18px;
 }
 .progress { flex: 1; min-width: 180px; height: 10px; background: #e3e6ea; border-radius: 6px; overflow: hidden; }
-.progress > i { display: block; height: 100%; width: 0%; background: #2f7d5b; transition: width .25s; }
+.progress > i { display: block; height: 100%; width: 0%; background: #2563eb; transition: width .25s; }
 .pct { font-weight: 600; font-size: 14px; min-width: 96px; }
 button {
   font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
@@ -44,8 +44,8 @@ button {
   border-radius: 7px; padding: 7px 13px;
 }
 button:hover { background: #eef0f3; }
-button.primary { background: #2f7d5b; border-color: #2f7d5b; color: #fff; }
-button.primary:hover { background: #276a4d; }
+button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+button.primary:hover { background: #1d4ed8; }
 button.danger { color: #b4231f; border-color: #e0b6b4; }
 button.danger:hover { background: #fceceb; }
 .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
@@ -60,7 +60,7 @@ ul.items input[type=checkbox] { margin-top: 3px; width: 17px; height: 17px; flex
 ul.items label { cursor: pointer; }
 .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
 .tag.pulled { background: #e7eefc; color: #2f4d99; }
-.tag.confirm { background: #e6f2ec; color: #2f7d5b; }
+.tag.confirm { background: #ecfdf3; color: #067647; }
 .tag.test { background: #fdeede; color: #9a6418; }
 .tag.sign { background: #efe6f7; color: #6a3a99; }
 .sub-list { list-style: disc; margin: 4px 0 2px 22px; padding: 0; color: #4a525c; font-size: 13.5px; }
@@ -90,9 +90,12 @@ table.matrix input[type=text] { width: 100%; border: 1px solid #d7dbe0; border-r
 .pathbox .opt span { color: #4a525c; font-size: 13.5px; }
 .muted { color: #5b6470; font-size: 13px; }
 .save-status { font-size: 12px; color: #5b6470; }
+input:disabled, select:disabled, textarea:disabled { background: #eef1f6; color: #94a3b8; cursor: not-allowed; }
+.lock-note { display: none; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 10px 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; margin: 0 0 16px; }
+.lock-note.on { display: block; }
 @media print {
   body { background: #fff; }
-  .bar, .no-print { display: none !important; }
+  .bar, .no-print, .lock-note { display: none !important; }
   .card { break-inside: avoid; border-color: #ccc; }
   .wrap { max-width: none; padding: 0; }
   a[href]:after { content: ""; }
@@ -111,6 +114,7 @@ table.matrix input[type=text] { width: 100%; border: 1px solid #d7dbe0; border-r
   </div>
 
   <h1>Open Readiness</h1>
+  <div class="lock-note" id="lockNote">This document is locked — the Club acknowledgment has been signed. Uncheck it below to make edits.</div>
 
   <!-- CONTEXT -->
   <div class="card">
@@ -448,6 +452,18 @@ document.addEventListener("input", e=>{
   }
 });
 
+function isClubAcked(){ const c=document.querySelector('[data-ack="club"]'); return !!(c && c.checked); }
+function applyLock(){
+  const locked = isClubAcked();
+  document.querySelectorAll("input, select, textarea").forEach(el=>{
+    if(el.closest(".attest")) return;
+    el.disabled = locked;
+  });
+  document.querySelectorAll("button.danger").forEach(b=> b.disabled = locked);
+  const note = document.getElementById("lockNote");
+  if(note) note.classList.toggle("on", locked);
+}
+
 // INIT
 (async function init(){
   state = await fetchState();
@@ -464,6 +480,9 @@ document.addEventListener("input", e=>{
   updateProgress();
   checkDates();
   setSaveStatus("");
+  const clubAck = document.querySelector('[data-ack="club"]');
+  if(clubAck) clubAck.addEventListener("change", ()=>{ saveNow(); applyLock(); });
+  applyLock();
 })();
 </script>
 </body>
