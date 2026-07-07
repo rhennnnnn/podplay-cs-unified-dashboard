@@ -333,18 +333,12 @@ export function OnboardingDetailSheet({
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Hardware Delivery Date" value={mrpData.record.mrp?.hardwareDeliveryDate} />
                     <Field
-                      label="Delivered"
+                      label="Status"
                       value={
-                        mrpData.record.mrp?.deliveredStatus ? (
-                          <Badge variant="secondary">{mrpData.record.mrp.deliveredStatus}</Badge>
-                        ) : null
-                      }
-                    />
-                    <Field
-                      label="Install Started"
-                      value={
-                        mrpData.record.mrp?.installStartedStatus ? (
-                          <Badge variant="secondary">{mrpData.record.mrp.installStartedStatus}</Badge>
+                        mrpData.record.mrp?.status ? (
+                          <Badge variant="secondary">
+                            {mrpData.record.mrp.status}
+                          </Badge>
                         ) : null
                       }
                     />
