@@ -331,23 +331,45 @@ export function OnboardingDetailSheet({
                   <p className="text-sm text-muted-foreground">No matching MRP record found.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Hardware Delivery Date" value={mrpData.record.mrp?.hardwareDeliveryDate} />
+                    <Field label="Customer" value={mrpData.record.mrp.customer} />
+                    <Field label="Tier" value={mrpData.record.mrp.tier} />
+                    <Field label="Courts" value={mrpData.record.mrp.courts} />
                     <Field
-                      label="Delivered"
-                      value={
-                        mrpData.record.mrp?.deliveredStatus ? (
-                          <Badge variant="secondary">{mrpData.record.mrp.deliveredStatus}</Badge>
-                        ) : null
-                      }
+                      label="Status"
+                      value={mrpData.record.mrp.status ? <Badge variant="secondary">{mrpData.record.mrp.status}</Badge> : null}
                     />
                     <Field
-                      label="Install Started"
-                      value={
-                        mrpData.record.mrp?.installStartedStatus ? (
-                          <Badge variant="secondary">{mrpData.record.mrp.installStartedStatus}</Badge>
-                        ) : null
-                      }
+                      label="App Status"
+                      value={mrpData.record.mrp.appStatus ? <Badge variant="secondary">{mrpData.record.mrp.appStatus}</Badge> : null}
                     />
+                    <Field
+                      label="Billing Status"
+                      value={mrpData.record.mrp.billingStatus ? <Badge variant="secondary">{mrpData.record.mrp.billingStatus}</Badge> : null}
+                    />
+                    <Field label="Customer Email" value={mrpData.record.mrp.customerEmail} />
+                    <Field label="Customer Phone" value={mrpData.record.mrp.customerPhone} />
+                    <Field label="Installer" value={mrpData.record.mrp.installer} />
+                    <Field label="Installer Phone" value={mrpData.record.mrp.installerPhone} />
+                    <Field label="Installer Email" value={mrpData.record.mrp.installerEmail} />
+                    <Field label="Hardware Delivery Date" value={mrpData.record.mrp.hardwareDeliveryDate} />
+                    <Field label="Days Remaining" value={mrpData.record.mrp.daysRemaining} />
+                    <Field label="Soft Opening" value={mrpData.record.mrp.softOpening} />
+                    <Field label="Grand Opening" value={mrpData.record.mrp.grandOpening} />
+                    <Field label="Date Entered" value={mrpData.record.mrp.dateEntered} />
+                    <Field label="Orig. Hardware Delivery Request" value={mrpData.record.mrp.origHardwareDeliveryRequest} />
+                    <Field label="PP Hardware Box 1 Shipped" value={mrpData.record.mrp.ppHardwareBox1Shipped} />
+                    <Field label="PP Hardware Box 1 Delivered" value={mrpData.record.mrp.ppHardwareBox1Delivered} />
+                    <Field label="PP Hardware Box 2 Shipped" value={mrpData.record.mrp.ppHardwareBox2Shipped} />
+                    <Field label="PP Hardware Box 2 Delivered" value={mrpData.record.mrp.ppHardwareBox2Delivered} />
+                    <Field label="PP Hardware Box 3 Shipped" value={mrpData.record.mrp.ppHardwareBox3Shipped} />
+                    <Field label="PP Hardware Box 3 Delivered" value={mrpData.record.mrp.ppHardwareBox3Delivered} />
+                    <Field label="Dropship 1 Ordered" value={mrpData.record.mrp.dropship1Ordered} />
+                    <Field label="Dropship 1 Delivered" value={mrpData.record.mrp.dropship1Delivered} />
+                    <Field label="Dropship 2 Ordered" value={mrpData.record.mrp.dropship2Ordered} />
+                    <Field label="Dropship 2 Delivered" value={mrpData.record.mrp.dropship2Delivered} />
+                    <Field label="Install Start" value={mrpData.record.mrp.installStart} />
+                    <Field label="Install End" value={mrpData.record.mrp.installEnd} />
+                    <Field label="Inventory Check" value={mrpData.record.mrp.inventoryCheck} />
                     <Field label="Greenfield / Migration" value={props?.migration} />
                     <Field label="Quotes" value={props?.quotes} />
                   </div>

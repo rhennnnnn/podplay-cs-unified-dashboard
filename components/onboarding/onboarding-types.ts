@@ -50,8 +50,44 @@ export interface DealDetailResponse {
   notes: { id: string; hs_note_body?: string | null; hs_timestamp?: string | null; hubspot_owner_id?: string | null }[];
 }
 
+// Full per-row MRP record (every mapped column except "Progress Bar").
+export interface MrpRecordDto {
+  club: string;
+  customer: string | null;
+  tier: string | null;
+  courts: string | null;
+  status: string | null;
+  progress: string | null;
+  appStatus: string | null;
+  billingStatus: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  installer: string | null;
+  installerPhone: string | null;
+  installerEmail: string | null;
+  hardwareDeliveryDate: string | null;
+  daysRemaining: string | null;
+  softOpening: string | null;
+  grandOpening: string | null;
+  dateEntered: string | null;
+  origHardwareDeliveryRequest: string | null;
+  ppHardwareBox1Shipped: string | null;
+  ppHardwareBox1Delivered: string | null;
+  ppHardwareBox2Shipped: string | null;
+  ppHardwareBox2Delivered: string | null;
+  ppHardwareBox3Shipped: string | null;
+  ppHardwareBox3Delivered: string | null;
+  dropship1Ordered: string | null;
+  dropship1Delivered: string | null;
+  dropship2Ordered: string | null;
+  dropship2Delivered: string | null;
+  installStart: string | null;
+  installEnd: string | null;
+  inventoryCheck: string | null;
+}
+
 export interface MrpJoinedResponse {
-  record: { companyName: string; mrp: { clubName: string; hardwareDeliveryDate: string | null; deliveredStatus: string | null; installStartedStatus: string | null } | null } | null;
+  record: { companyName: string; mrp: MrpRecordDto | null } | null;
   mrpStatus: "active" | "unresponsive" | "broken" | "down" | "not_configured" | "access_pending" | null;
 }
 

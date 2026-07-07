@@ -78,16 +78,18 @@ export function OnboardingGrid({
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // revalidateOnFocus so a pause/interval change made by an admin in another
+  // tab is reflected the moment this board regains focus, not up to 60s later.
   const { data: polling } = useSWR<PollingSettings>("/api/integrations/hubspot/polling", fetcher, {
     refreshInterval: 60_000,
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
   });
   // MRP shares the same auto-poll interval as HubSpot (read above), but has
   // its own independent pause state — read separately so the board can show
   // "MRP sync skipped" without affecting the HubSpot half of a refresh.
   const { data: mrpPolling } = useSWR<PollingSettings>("/api/integrations/mrp_sheets/polling", fetcher, {
     refreshInterval: 60_000,
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
   });
   const [combinedNextRefreshAllowedAt, setCombinedNextRefreshAllowedAt] = React.useState<string | null>(null);
   const [mrpSkippedNote, setMrpSkippedNote] = React.useState(false);

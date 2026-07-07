@@ -43,6 +43,11 @@ export async function recordCall(
     if (result.success) {
       updates.status = "active" satisfies ApiIntegrationStatus;
       updates.last_success_at = now.toISOString();
+      // Clear any prior error so a stale message (e.g. the pre-grant "Viewer
+      // access not yet granted") can't linger on the Health card once a real
+      // successful call has gone through.
+      updates.last_error_message = null;
+      updates.last_error_at = null;
     } else {
       // 403 is a real permission gap (Viewer share not granted yet), not an
       // outage — checked before the generic 4xx->"broken" rule so the Health
