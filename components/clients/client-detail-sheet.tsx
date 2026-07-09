@@ -175,7 +175,7 @@ export function ClientDetailSheet({
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              variant={location.pre_open_done ? "default" : "outline"}
+              variant={location.pre_open_done ? "default" : "secondary"}
               disabled={togglingField !== null}
               onClick={() => toggleFollowUp("pre_open_done")}
               className="gap-1.5"
@@ -185,7 +185,7 @@ export function ClientDetailSheet({
             </Button>
             <Button
               size="sm"
-              variant={location.post_open_done ? "default" : "outline"}
+              variant={location.post_open_done ? "default" : "secondary"}
               disabled={togglingField !== null}
               onClick={() => toggleFollowUp("post_open_done")}
               className="gap-1.5"
