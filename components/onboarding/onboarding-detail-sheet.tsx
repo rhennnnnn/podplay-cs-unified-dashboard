@@ -441,7 +441,7 @@ export function OnboardingDetailSheet({
                 </div>
               )}
 
-              <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-x-5 gap-y-2.5 rounded-xl border bg-muted/30 p-4 text-sm sm:grid-cols-2">
                 {FORM_CHECKLIST_ITEMS.map((item) => {
                   const checked = props ? isFormChecked(props[item.key]) : false;
                   const link = item.linkKey ? props?.[item.linkKey] : null;
