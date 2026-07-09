@@ -46,7 +46,10 @@ export function DeleteClientDialog({
 
   if (!location) return null;
 
-  const matches = confirmText.trim() === location.name;
+  // Trim BOTH sides: some rows (e.g. HubSpot-tracked or the legacy " TEST" row)
+  // have leading/trailing whitespace in name, which the user can't see or type,
+  // leaving "Delete Permanently" permanently disabled.
+  const matches = confirmText.trim() === location.name.trim();
 
   async function handleDelete() {
     if (!location || !matches) return;
