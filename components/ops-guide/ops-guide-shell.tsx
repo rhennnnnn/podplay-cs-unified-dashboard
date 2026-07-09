@@ -391,7 +391,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
             onClick={() => selectCategory(FAVORITES_VIEW)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-              activeCategory === FAVORITES_VIEW ? "bg-accent text-white" : "hover:bg-muted"
+              activeCategory === FAVORITES_VIEW ? "bg-accent text-accent-foreground" : "hover:bg-muted"
             )}
           >
             <Star className="h-3.5 w-3.5" />
@@ -402,7 +402,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
             onClick={() => selectCategory(RECENT_VIEW)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-              activeCategory === RECENT_VIEW ? "bg-accent text-white" : "hover:bg-muted"
+              activeCategory === RECENT_VIEW ? "bg-accent text-accent-foreground" : "hover:bg-muted"
             )}
           >
             <Clock className="h-3.5 w-3.5" />
@@ -415,7 +415,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
             onClick={() => selectCategory("All")}
             className={cn(
               "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-              activeCategory === "All" ? "bg-accent text-white" : "hover:bg-muted"
+              activeCategory === "All" ? "bg-accent text-accent-foreground" : "hover:bg-muted"
             )}
           >
             All Articles
@@ -430,7 +430,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                 onClick={() => selectCategory(cat.name)}
                 className={cn(
                   "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-                  activeCategory === cat.name ? "bg-accent text-white" : "hover:bg-muted"
+                  activeCategory === cat.name ? "bg-accent text-accent-foreground" : "hover:bg-muted"
                 )}
               >
                 <span className="flex items-center gap-2">

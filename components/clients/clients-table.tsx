@@ -34,6 +34,7 @@ import {
   isFollowUpOverdue,
   openReadinessChecklist,
 } from "@/lib/client-hub";
+import { getOpeningDateTier, OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -281,11 +282,18 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster, rosterM
         ),
         accessorFn: (l) => (tab === "opened" ? l.opened_date : l.opening_date),
         cell: ({ row }) => {
-          const dateStr = tab === "opened" ? row.original.opened_date : row.original.opening_date;
+          const l = row.original;
+          const dateStr = tab === "opened" ? l.opened_date : l.opening_date;
           const relative = formatRelativeDays(dateStr);
+          // Alert tiers apply to the Active tab's opening_date only — never to
+          // the Opened tab (completed) or to opened_date.
+          const tier = tab === "opened" ? null : getOpeningDateTier(l.opening_date, l.status === "opened");
           return (
             <div>
-              <div>{formatDate(dateStr)}</div>
+              <div className={tier ? OPENING_TIER_TEXT_CLASS[tier] : ""}>
+                {formatDate(dateStr)}
+                {tier === "overdue" && " (overdue)"}
+              </div>
               {relative && <div className="text-xs text-muted-foreground">{relative}</div>}
             </div>
           );

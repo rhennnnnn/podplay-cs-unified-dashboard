@@ -25,6 +25,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ActivityResponse, DealDetailResponse, MrpJoinedResponse, OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 const PORTAL_ID = "44006894";
+// Distinct, high-contrast link color (blue) that reads as a link in both light
+// and dark mode — the olive accent (text-primary) was too low-contrast on the
+// dark card backgrounds. Blue is already part of the app palette (blue badge).
+// The sheet surface is always the dark navy sidebar background (bg-sidebar) in
+// both light and dark mode, so a fixed bright blue reads clearly as a link in
+// both — unlike text-primary, which is olive (low-contrast on navy) in dark mode.
+const LINK_CLASS = "text-blue-400 underline underline-offset-2 hover:text-blue-300";
 const ACTIVITY_ICON = { note: StickyNote, email: Mail, call: PhoneCall, task: CheckSquare };
 
 const fetcher = (url: string) => fetch(url).then(async (res) => {
@@ -36,8 +43,8 @@ const fetcher = (url: string) => fetch(url).then(async (res) => {
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm">{value || "—"}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70">{label}</p>
+      <p className="text-sm text-sidebar-foreground">{value || "—"}</p>
     </div>
   );
 }
@@ -68,7 +75,15 @@ export function OnboardingDetailSheet({
   // which has to wait for the deal-detail fetch to resolve. This lets the MRP
   // fetch below start in parallel with deal-detail/activity instead of
   // waiting on deal-detail purely to learn a name we already had.
-  const companyName = listItem?.company?.name ?? data?.companies[0]?.name ?? null;
+  // Many onboarding deals have no linked HubSpot company (e.g. "Court 918"),
+  // so fall back to the deal name — it carries the same club identity the MRP
+  // sheet's "Club" column uses, and matchByCompanyName is token-based.
+  const companyName =
+    listItem?.company?.name ??
+    data?.companies[0]?.name ??
+    listItem?.properties?.hs_name ??
+    data?.deal.properties.hs_name ??
+    null;
   // Reads the cached joined HubSpot+MRP result — not a fresh per-open Sheets
   // API call. One sync run (lib/onboarding-sync.ts) serves every open sheet.
   // Always fires (even with an empty company) once dealId is set, so the
@@ -118,19 +133,19 @@ export function OnboardingDetailSheet({
             {/* Section 1 — Header */}
             <div className="pr-8">
               <div className="flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold text-white">{props?.hs_name || "(unnamed onboarding)"}</h2>
+                <h2 className="text-lg font-semibold text-sidebar-foreground">{props?.hs_name || "(unnamed onboarding)"}</h2>
                 <a
                   href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${dealId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sidebar-foreground/70 hover:text-white"
+                  className="text-sidebar-foreground/70 hover:text-sidebar-foreground"
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <Badge variant="secondary">{pipeline?.label ?? "Unknown pipeline"}</Badge>
-                {props?.podplay_tier && <Badge variant="outline">{TIER_LABEL[props.podplay_tier] ?? props.podplay_tier}</Badge>}
+                {props?.podplay_tier && <Badge variant="secondary">{TIER_LABEL[props.podplay_tier] ?? props.podplay_tier}</Badge>}
               </div>
 
               {pipeline && (
@@ -181,7 +196,7 @@ export function OnboardingDetailSheet({
                 <div className="mt-3 flex items-center gap-2">
                   <Badge>Already tracked</Badge>
                   {trackedLocationId && (
-                    <a href="/dashboard/clients" className="text-sm text-primary hover:underline">
+                    <a href="/dashboard/clients" className={`text-sm ${LINK_CLASS}`}>
                       View in tracker
                     </a>
                   )}
@@ -203,23 +218,30 @@ export function OnboardingDetailSheet({
             <div className="space-y-3">
               <p className="text-sm font-medium">Contact & Company</p>
               {contact ? (
-                <div className="rounded-lg border p-3 text-sm">
-                  <p className="font-medium">{[contact.firstname, contact.lastname].filter(Boolean).join(" ")}</p>
-                  {contact.jobtitle && <p className="text-muted-foreground">{contact.jobtitle}</p>}
+                <div className="rounded-xl border bg-muted/30 p-4 text-sm">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+                      {[contact.firstname?.[0], contact.lastname?.[0]].filter(Boolean).join("") || "?"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-sidebar-foreground">{[contact.firstname, contact.lastname].filter(Boolean).join(" ") || "Unnamed contact"}</p>
+                      {contact.jobtitle && <p className="truncate text-xs text-sidebar-foreground/70">{contact.jobtitle}</p>}
+                    </div>
+                  </div>
                   <div className="mt-1 flex flex-wrap gap-3">
                     {contact.email && (
-                      <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
+                      <a href={`mailto:${contact.email}`} className={LINK_CLASS}>
                         {contact.email}
                       </a>
                     )}
                     {contact.phone && (
-                      <a href={`tel:${contact.phone}`} className="text-primary hover:underline">
+                      <a href={`tel:${contact.phone}`} className={LINK_CLASS}>
                         {contact.phone}
                       </a>
                     )}
                   </div>
                   <div className="mt-2 border-t pt-2">
-                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70">
                       Forms Submitted
                     </p>
                     {contact.formSubmissions && contact.formSubmissions.length > 0 ? (
@@ -231,7 +253,7 @@ export function OnboardingDetailSheet({
                               href={getFormSubmissionUrl(PORTAL_ID, sub.formId, sub.submissionId)}
                               target="_blank"
                               rel="noreferrer"
-                              className="flex shrink-0 items-center gap-1 text-primary hover:underline"
+                              className={`flex shrink-0 items-center gap-1 ${LINK_CLASS}`}
                             >
                               {new Date(sub.timestamp).toLocaleDateString()} <ExternalLink className="h-3 w-3" />
                             </a>
@@ -239,23 +261,23 @@ export function OnboardingDetailSheet({
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-xs text-muted-foreground">No forms submitted yet.</p>
+                      <p className="text-xs text-sidebar-foreground/60">No forms submitted yet.</p>
                     )}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No contact linked.</p>
+                <p className="text-sm text-sidebar-foreground/70">No contact linked.</p>
               )}
               {company && (
-                <div className="rounded-lg border p-3 text-sm">
-                  <p className="font-medium">{company.name}</p>
+                <div className="rounded-xl border bg-muted/30 p-4 text-sm">
+                  <p className="font-medium text-sidebar-foreground">{company.name}</p>
                   <div className="mt-1 flex flex-wrap gap-3">
                     {company.domain && (
                       <a
                         href={`https://${company.domain}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-primary hover:underline"
+                        className={LINK_CLASS}
                       >
                         {company.domain}
                       </a>
@@ -313,7 +335,7 @@ export function OnboardingDetailSheet({
                 HubSpot's own onboarding properties, not the MRP sheet. */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">MRP</CardTitle>
+                <CardTitle className="text-sm">Deployment Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {mrpLoading ? (
@@ -384,7 +406,7 @@ export function OnboardingDetailSheet({
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Forms & Resources</p>
                 {props && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-sidebar-foreground/70">
                     {FORM_CHECKLIST_ITEMS.filter((item) => isFormChecked(props[item.key])).length} of{" "}
                     {FORM_CHECKLIST_ITEMS.length} received
                   </span>
@@ -398,7 +420,7 @@ export function OnboardingDetailSheet({
                       href={props.env_link}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${LINK_CLASS}`}
                     >
                       Environment <ExternalLink className="h-3 w-3" />
                     </a>
@@ -408,7 +430,7 @@ export function OnboardingDetailSheet({
                       href={props.onboarding_deck}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${LINK_CLASS}`}
                     >
                       Onboarding Deck <ExternalLink className="h-3 w-3" />
                     </a>
@@ -418,7 +440,7 @@ export function OnboardingDetailSheet({
                       href={props.linear_project}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-primary hover:underline"
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${LINK_CLASS}`}
                     >
                       Linear Project <ExternalLink className="h-3 w-3" />
                     </a>
@@ -426,7 +448,7 @@ export function OnboardingDetailSheet({
                 </div>
               )}
 
-              <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-x-5 gap-y-2.5 rounded-xl border bg-muted/30 p-4 text-sm sm:grid-cols-2">
                 {FORM_CHECKLIST_ITEMS.map((item) => {
                   const checked = props ? isFormChecked(props[item.key]) : false;
                   const link = item.linkKey ? props?.[item.linkKey] : null;
@@ -437,13 +459,13 @@ export function OnboardingDetailSheet({
                       ) : (
                         <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
                       )}
-                      <span className={checked ? "" : "text-muted-foreground"}>{item.label}</span>
+                      <span className={checked ? "" : "text-sidebar-foreground/60"}>{item.label}</span>
                       {checked && link && (
                         <a
                           href={link}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-primary hover:underline"
+                          className={LINK_CLASS}
                           aria-label={`Open link for ${item.label}`}
                         >
                           <ExternalLink className="h-3 w-3" />
