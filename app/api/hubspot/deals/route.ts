@@ -23,13 +23,20 @@ async function loadPipeline(
   pipeline: PipelineKey,
   manual: boolean
 ): Promise<{ deals: OnboardingListItem[]; total: number; fetchedAt: string }> {
-  if (!manual) {
-    const snap = await readSnapshot<{ deals: OnboardingListItem[]; total: number }>(SNAPSHOT_KEY[pipeline]);
-    if (snap) return { deals: snap.data.deals, total: snap.data.total, fetchedAt: snap.fetchedAt };
+  const snap = await readSnapshot<{ deals: OnboardingListItem[]; total: number }>(SNAPSHOT_KEY[pipeline]);
+  if (!manual && snap) {
+    return { deals: snap.data.deals, total: snap.data.total, fetchedAt: snap.fetchedAt };
   }
   // Cold snapshot or manual refresh — build live and persist so the next read
-  // (and every other session) is instant.
-  const built = await buildPipelineDeals(pipeline, manual ? "manual" : "auto");
+  // (and every other session) is instant. On manual, reuse the existing
+  // snapshot's last-email values instead of re-sweeping them per card, so the
+  // rebuild finishes under the serverless timeout (the hourly cron does the
+  // full email sweep).
+  const priorLastEmails =
+    manual && snap
+      ? Object.fromEntries(snap.data.deals.map((d) => [d.id, d.lastEmail]))
+      : undefined;
+  const built = await buildPipelineDeals(pipeline, manual ? "manual" : "auto", { priorLastEmails });
   const fetchedAt = new Date().toISOString();
   await writeSnapshot(SNAPSHOT_KEY[pipeline], built).catch(() => {});
   return { deals: built.deals, total: built.total, fetchedAt };
