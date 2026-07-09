@@ -68,7 +68,15 @@ export function OnboardingDetailSheet({
   // which has to wait for the deal-detail fetch to resolve. This lets the MRP
   // fetch below start in parallel with deal-detail/activity instead of
   // waiting on deal-detail purely to learn a name we already had.
-  const companyName = listItem?.company?.name ?? data?.companies[0]?.name ?? null;
+  // Many onboarding deals have no linked HubSpot company (e.g. "Court 918"),
+  // so fall back to the deal name — it carries the same club identity the MRP
+  // sheet's "Club" column uses, and matchByCompanyName is token-based.
+  const companyName =
+    listItem?.company?.name ??
+    data?.companies[0]?.name ??
+    listItem?.properties?.hs_name ??
+    data?.deal.properties.hs_name ??
+    null;
   // Reads the cached joined HubSpot+MRP result — not a fresh per-open Sheets
   // API call. One sync run (lib/onboarding-sync.ts) serves every open sheet.
   // Always fires (even with an empty company) once dealId is set, so the
