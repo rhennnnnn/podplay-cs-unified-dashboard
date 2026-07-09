@@ -211,9 +211,16 @@ export function OnboardingDetailSheet({
             <div className="space-y-3">
               <p className="text-sm font-medium">Contact & Company</p>
               {contact ? (
-                <div className="rounded-lg border p-3 text-sm">
-                  <p className="font-medium">{[contact.firstname, contact.lastname].filter(Boolean).join(" ")}</p>
-                  {contact.jobtitle && <p className="text-muted-foreground">{contact.jobtitle}</p>}
+                <div className="rounded-xl border bg-muted/30 p-4 text-sm">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+                      {[contact.firstname?.[0], contact.lastname?.[0]].filter(Boolean).join("") || "?"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{[contact.firstname, contact.lastname].filter(Boolean).join(" ") || "Unnamed contact"}</p>
+                      {contact.jobtitle && <p className="truncate text-xs text-muted-foreground">{contact.jobtitle}</p>}
+                    </div>
+                  </div>
                   <div className="mt-1 flex flex-wrap gap-3">
                     {contact.email && (
                       <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
@@ -255,7 +262,7 @@ export function OnboardingDetailSheet({
                 <p className="text-sm text-muted-foreground">No contact linked.</p>
               )}
               {company && (
-                <div className="rounded-lg border p-3 text-sm">
+                <div className="rounded-xl border bg-muted/30 p-4 text-sm">
                   <p className="font-medium">{company.name}</p>
                   <div className="mt-1 flex flex-wrap gap-3">
                     {company.domain && (
@@ -434,7 +441,7 @@ export function OnboardingDetailSheet({
                 </div>
               )}
 
-              <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-x-5 gap-y-2.5 rounded-xl border bg-muted/30 p-4 text-sm sm:grid-cols-2">
                 {FORM_CHECKLIST_ITEMS.map((item) => {
                   const checked = props ? isFormChecked(props[item.key]) : false;
                   const link = item.linkKey ? props?.[item.linkKey] : null;

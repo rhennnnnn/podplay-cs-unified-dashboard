@@ -86,7 +86,7 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
 
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1.5 truncate">
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[9px] font-semibold text-accent-foreground dark:text-accent">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[9px] font-semibold text-accent-foreground">
             {owner ? `${owner.firstName[0] ?? ""}${owner.lastName[0] ?? ""}` : "—"}
           </span>
           <span className="truncate">{owner ? `${owner.firstName} ${owner.lastName}`.trim() : "Unassigned"}</span>
