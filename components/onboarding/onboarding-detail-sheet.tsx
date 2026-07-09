@@ -321,7 +321,7 @@ export function OnboardingDetailSheet({
                 HubSpot's own onboarding properties, not the MRP sheet. */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">MRP</CardTitle>
+                <CardTitle className="text-sm">Deployment Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {mrpLoading ? (

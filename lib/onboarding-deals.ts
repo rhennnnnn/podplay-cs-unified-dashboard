@@ -56,10 +56,22 @@ export interface PipelineDeals {
   total: number;
 }
 
+export interface BuildOptions {
+  // When set, skip the (expensive) per-card last-email lookup and reuse these
+  // values by deal id instead. Used by the manual Refresh path so it finishes
+  // well under the serverless timeout — the full email sweep only runs on the
+  // hourly cron. Missing ids just get null until the next cron.
+  priorLastEmails?: Record<string, OnboardingListItem["lastEmail"]>;
+}
+
 // Fetches and enriches every deal in one pipeline. Paginates fully (pipelines
 // run ~40-60 records, so this is one or two pages) so the snapshot holds the
 // complete set and the read route never needs a live call to fill gaps.
-export async function buildPipelineDeals(pipeline: PipelineKey, trigger: PollTrigger): Promise<PipelineDeals> {
+export async function buildPipelineDeals(
+  pipeline: PipelineKey,
+  trigger: PollTrigger,
+  opts: BuildOptions = {}
+): Promise<PipelineDeals> {
   const all: SearchResponse["results"] = [];
   let after: string | undefined;
   let total = 0;
@@ -102,7 +114,12 @@ export async function buildPipelineDeals(pipeline: PipelineKey, trigger: PollTri
     batchReadObjects<{ name: string | null; domain: string | null }>("companies", companyIds, ["name", "domain"]),
   ]);
 
-  const lastEmails = await mapLimit(all, 20, (r) => getLastEmail(r.id));
+  // Skip the per-card email sweep when prior values are supplied (manual
+  // refresh) — that lookup is what pushes a full rebuild past the serverless
+  // timeout. Reuse the last snapshot's values; the hourly cron refreshes them.
+  const lastEmails = opts.priorLastEmails
+    ? all.map((r) => opts.priorLastEmails![r.id] ?? null)
+    : await mapLimit(all, 20, (r) => getLastEmail(r.id));
 
   const deals: OnboardingListItem[] = all.map((r, i) => {
     const contactId = contactAssoc[r.id]?.[0];
