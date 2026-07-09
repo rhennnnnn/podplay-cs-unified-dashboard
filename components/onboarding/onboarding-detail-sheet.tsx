@@ -126,12 +126,12 @@ export function OnboardingDetailSheet({
             {/* Section 1 — Header */}
             <div className="pr-8">
               <div className="flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold text-white">{props?.hs_name || "(unnamed onboarding)"}</h2>
+                <h2 className="text-lg font-semibold text-foreground">{props?.hs_name || "(unnamed onboarding)"}</h2>
                 <a
                   href={`https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-162/${dealId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sidebar-foreground/70 hover:text-white"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>
