@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatDate, isFollowUpOverdue, openReadinessChecklist } from "@/lib/client-hub";
+import { getOpeningDateTier, OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
 import type { ActivityLogEntry, Location, Readiness } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -27,8 +28,8 @@ interface ClientDetailSheetProps {
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm">{value || "—"}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70">{label}</p>
+      <p className="text-sm text-sidebar-foreground">{value || "—"}</p>
     </div>
   );
 }
@@ -133,6 +134,7 @@ export function ClientDetailSheet({
   if (!location) return null;
 
   const overdue = isFollowUpOverdue(location);
+  const openingTier = getOpeningDateTier(location.opening_date, location.status === "opened");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -140,7 +142,7 @@ export function ClientDetailSheet({
         <div className="space-y-6 pr-2">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-lg font-semibold text-foreground">{location.name}</h2>
+              <h2 className="text-lg font-semibold text-sidebar-foreground">{location.name}</h2>
               <p className="text-sm text-sidebar-foreground/70">{location.client_name}</p>
             </div>
             <StatusBadge status={location.status} />
@@ -162,7 +164,15 @@ export function ClientDetailSheet({
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tier" value={location.tier} />
-            <Field label="Opening Date" value={formatDate(location.opening_date)} />
+            <Field
+              label="Opening Date"
+              value={
+                <span className={openingTier ? OPENING_TIER_TEXT_CLASS[openingTier] : ""}>
+                  {formatDate(location.opening_date)}
+                  {openingTier === "overdue" && " (overdue)"}
+                </span>
+              }
+            />
             <Field label="Tracking" value={location.tracker} />
             {location.status === "opened" && (
               <>
@@ -197,7 +207,7 @@ export function ClientDetailSheet({
 
           {location.notes && (
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70">Notes</p>
               <p className="whitespace-pre-wrap text-sm">{location.notes}</p>
             </div>
           )}
