@@ -5,6 +5,11 @@ import { shouldAllowPoll } from "@/lib/api-health";
 import { getCombinedNextRefreshAllowedAt, runOnboardingSync } from "@/lib/onboarding-sync";
 
 export const dynamic = "force-dynamic";
+// The manual refresh does a full live rebuild (HubSpot pipeline enrichment +
+// MRP), which for Pro/Auto (~56 deals with per-card email lookups) can exceed
+// the default serverless timeout and silently fail — the board would then keep
+// showing the old "Updated X ago". Give it the full window.
+export const maxDuration = 60;
 
 // POST — server-only. The Onboarding board's Refresh button calls this
 // instead of hitting HubSpot directly, so one click refreshes BOTH HubSpot

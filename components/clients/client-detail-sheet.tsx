@@ -140,7 +140,7 @@ export function ClientDetailSheet({
         <div className="space-y-6 pr-2">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-lg font-semibold text-white">{location.name}</h2>
+              <h2 className="text-lg font-semibold text-foreground">{location.name}</h2>
               <p className="text-sm text-sidebar-foreground/70">{location.client_name}</p>
             </div>
             <StatusBadge status={location.status} />

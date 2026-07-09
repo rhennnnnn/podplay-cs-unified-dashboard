@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { formatRelativeTime, PIPELINE_MAP, type HubspotOwner } from "@/lib/hubspot";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +93,7 @@ export function OnboardingGrid({
     revalidateOnFocus: true,
   });
   const [combinedNextRefreshAllowedAt, setCombinedNextRefreshAllowedAt] = React.useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
 
   const buildDealsKey = React.useCallback(
     (forPipeline: PipelineKey) => {
@@ -197,7 +199,8 @@ export function OnboardingGrid({
       : undefined;
 
   async function handleManualRefresh() {
-    if (manualRefreshDisabled) return;
+    if (manualRefreshDisabled || isRefreshing) return;
+    setIsRefreshing(true);
     try {
       const params = new URLSearchParams({ pipeline });
       if (owner !== "all") params.set("owner", owner);
@@ -209,11 +212,13 @@ export function OnboardingGrid({
         return;
       }
       setCombinedNextRefreshAllowedAt(json.nextRefreshAllowedAt);
-      // The sync route already refreshed HubSpot's cache server-side — a
-      // plain revalidate here now hits that warm cache instead of HubSpot.
+      // The sync route already rebuilt the snapshot server-side — revalidate so
+      // the board (and its "Updated X ago") reflects the just-written snapshot.
       await mutate();
     } catch {
       toast.error("Refresh failed.");
+    } finally {
+      setIsRefreshing(false);
     }
   }
 
@@ -234,13 +239,13 @@ export function OnboardingGrid({
             <Button
               size="sm"
               variant="outline"
-              disabled={manualRefreshDisabled}
+              disabled={manualRefreshDisabled || isRefreshing}
               onClick={handleManualRefresh}
               className="gap-1.5"
               title={manualRefreshReason ?? (cooldownSeconds > 0 ? "Wait for the shared cooldown to clear." : undefined)}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {cooldownSeconds > 0 ? `Refresh (${cooldownSeconds}s)` : "Refresh"}
+              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+              {isRefreshing ? "Refreshing…" : cooldownSeconds > 0 ? `Refresh (${cooldownSeconds}s)` : "Refresh"}
             </Button>
             {(mrpPolling?.pausedAll || mrpPolling?.autoPollPaused) && (
               <span className="whitespace-nowrap text-xs text-muted-foreground">MRP sync skipped — paused</span>
