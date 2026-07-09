@@ -163,6 +163,8 @@ export function ClientDetailSheet({
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tier" value={location.tier} />
             <Field label="Opening Date" value={formatDate(location.opening_date)} />
+            <Field label="Pre-sale Date" value={location.presale_date ? formatDate(location.presale_date) : null} />
+            <Field label="Delivery Date" value={location.delivery_date ? formatDate(location.delivery_date) : null} />
             <Field label="Tracking" value={location.tracker} />
             {location.status === "opened" && (
               <>

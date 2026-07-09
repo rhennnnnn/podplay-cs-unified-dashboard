@@ -6,6 +6,8 @@ export interface Location {
   name: string;
   tier: string | null;
   opening_date: string;
+  presale_date: string | null;
+  delivery_date: string | null;
   tracker: string | null;
   status: LocationStatus;
   notes: string | null;

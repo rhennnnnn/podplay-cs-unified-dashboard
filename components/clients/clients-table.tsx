@@ -292,6 +292,30 @@ export function ClientsTable({ initialLocations, userEmail, loginRoster, rosterM
         },
       },
       {
+        id: "presale_date",
+        header: ({ column }) => (
+          <SortableHeader
+            label="Pre-sale Date"
+            sorted={column.getIsSorted()}
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          />
+        ),
+        accessorFn: (l) => l.presale_date,
+        cell: ({ row }) => (row.original.presale_date ? formatDate(row.original.presale_date) : "—"),
+      },
+      {
+        id: "delivery_date",
+        header: ({ column }) => (
+          <SortableHeader
+            label="Delivery Date"
+            sorted={column.getIsSorted()}
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          />
+        ),
+        accessorFn: (l) => l.delivery_date,
+        cell: ({ row }) => (row.original.delivery_date ? formatDate(row.original.delivery_date) : "—"),
+      },
+      {
         header: ({ column }) => (
           <SortableHeader
             label="Tracking"
