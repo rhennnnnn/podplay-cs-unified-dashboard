@@ -36,7 +36,7 @@ export function getOpeningDateTier(
 // (blue-500, accent olive-green, amber-500, destructive) — no new visual language.
 export const OPENING_TIER_TEXT_CLASS: Record<Exclude<OpeningDateTier, null>, string> = {
   upcoming: "text-blue-500",
-  today: "text-accent",
+  today: "text-green-600 dark:text-green-500",
   late: "text-amber-500",
   overdue: "text-destructive",
 };
