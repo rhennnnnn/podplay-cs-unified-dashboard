@@ -15,6 +15,7 @@ export interface Location {
   post_open_done: boolean;
   opened_date: string | null;
   open_outcome: string | null;
+  qc_date: string | null;
   csa_owner: string | null;
   hubspot_deal_id: string | null;
 }

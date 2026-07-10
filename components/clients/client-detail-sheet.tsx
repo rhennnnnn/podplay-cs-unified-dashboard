@@ -6,15 +6,9 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatDate, isFollowUpOverdue, openReadinessChecklist } from "@/lib/client-hub";
-import { getOpeningDateTier, OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
-import {
-  boxShippedLateTier,
-  getBoxCells,
-  isNa,
-  parseFlexDate,
-  resolveHardwareDeliveryDate,
-} from "@/lib/tracker-mrp";
-import { computeRecommendedQcDate, qcConflict } from "@/lib/qc-date";
+import { OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
+import { boxDeliveredTier, boxShippedTier, getBoxCells, isNa, parseFlexDate } from "@/lib/tracker-mrp";
+import { computeRowFlags } from "@/lib/tracker-flags";
 import type { MrpRecord } from "@/lib/mrp";
 import type { ActivityLogEntry, Location, Readiness } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -47,7 +41,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function MissingValue() {
   return (
     <span className={`inline-flex items-center gap-1 ${OPENING_TIER_TEXT_CLASS.overdue}`}>
-      <AlertTriangle className="h-3 w-3" />— (missing)
+      <AlertTriangle className="h-3 w-3" />—
     </span>
   );
 }
@@ -160,10 +154,10 @@ export function ClientDetailSheet({
 
   const overdue = isFollowUpOverdue(location);
   const completed = location.status === "opened";
-  const openingTier = getOpeningDateTier(location.opening_date, completed);
-  const hardware = resolveHardwareDeliveryDate(mrpRecord, location.delivery_date);
-  const qcDate = computeRecommendedQcDate(mrpRecord);
-  const qcConf = completed ? null : qcConflict(qcDate, location.opening_date);
+  const flags = computeRowFlags(location, mrpRecord);
+  const openingTier = flags.openingTier;
+  const hardware = flags.hardware;
+  const qcConf = flags.qc;
   const boxCells = getBoxCells(mrpRecord).filter((b) => b.applicable);
 
   return (
@@ -194,7 +188,10 @@ export function ClientDetailSheet({
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tier" value={location.tier} />
-            <Field label="Pre-sale Date" value={location.presale_date ? formatDate(location.presale_date) : null} />
+            <Field
+              label="Pre-sale Date"
+              value={location.presale_date ? formatDate(location.presale_date) : completed ? null : <MissingValue />}
+            />
             <Field
               label="Hardware Delivery Date"
               value={
@@ -224,16 +221,30 @@ export function ClientDetailSheet({
               }
             />
             <Field
-              label="Recommended QC Date"
+              label="QC Date"
               value={
-                qcDate ? (
+                flags.effectiveQcDate ? (
                   <span className={qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""} title={qcConf?.message}>
-                    {qcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                    {flags.effectiveQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                    <span className="ml-1 text-xs text-sidebar-foreground/50">
+                      ({flags.qcSource === "manual" ? "manual" : "recommended"})
+                    </span>
                   </span>
                 ) : null
               }
             />
-            <Field label="Tracking" value={location.tracker} />
+            <Field
+              label="Tracking"
+              value={
+                flags.noTracking ? (
+                  <span className={`inline-flex items-center gap-1 ${OPENING_TIER_TEXT_CLASS.overdue}`}>
+                    <AlertTriangle className="h-3 w-3" />None
+                  </span>
+                ) : (
+                  location.tracker
+                )
+              }
+            />
             {location.status === "opened" && (
               <>
                 <Field label="Opened Date" value={formatDate(location.opened_date)} />
@@ -249,7 +260,8 @@ export function ClientDetailSheet({
               </p>
               <div className="space-y-1.5 text-sm">
                 {boxCells.map((b) => {
-                  const shipTier = boxShippedLateTier(mrpRecord, b.index);
+                  const shipTier = boxShippedTier(mrpRecord, b.index);
+                  const delTier = boxDeliveredTier(mrpRecord, b.index);
                   return (
                     <div key={b.index} className="flex items-center justify-between gap-3">
                       <span className="text-sidebar-foreground/70">Box {b.index}</span>
@@ -257,7 +269,7 @@ export function ClientDetailSheet({
                         <span className={shipTier ? OPENING_TIER_TEXT_CLASS[shipTier] : "text-sidebar-foreground"}>
                           Shipped: {isNa(b.shipped) ? "—" : formatFlex(b.shipped)}
                         </span>
-                        <span className="text-sidebar-foreground">
+                        <span className={delTier ? OPENING_TIER_TEXT_CLASS[delTier] : "text-sidebar-foreground"}>
                           Delivered: {isNa(b.delivered) ? "—" : formatFlex(b.delivered)}
                         </span>
                       </span>

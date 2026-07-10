@@ -38,6 +38,7 @@ interface FormState {
   opening_date: string;
   presale_date: string;
   delivery_date: string;
+  qc_date: string;
   tracker: string[];
   status: LocationStatus;
   notes: string;
@@ -64,6 +65,7 @@ function toFormState(location?: Location): FormState {
     opening_date: location?.opening_date ?? "",
     presale_date: location?.presale_date ?? "",
     delivery_date: location?.delivery_date ?? "",
+    qc_date: location?.qc_date ?? "",
     tracker: parseTracker(location?.tracker ?? null),
     status: location?.status ?? "on-track",
     notes: location?.notes ?? "",
@@ -127,6 +129,7 @@ export function ClientFormDialog({
         opening_date: form.opening_date || null,
         presale_date: form.presale_date || null,
         delivery_date: form.delivery_date || null,
+        qc_date: form.qc_date || null,
         tracker: joinTracker(form.tracker),
         status: form.status,
         notes: form.notes || null,
@@ -236,13 +239,27 @@ export function ClientFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="delivery_date">Delivery Date</Label>
+              <Label htmlFor="delivery_date">Hardware Delivery Date (manual)</Label>
               <Input
                 id="delivery_date"
                 type="date"
                 value={form.delivery_date}
                 onChange={(e) => update("delivery_date", e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">Fallback shown only when no MRP match.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="qc_date">QC Date (manual)</Label>
+              <Input
+                id="qc_date"
+                type="date"
+                value={form.qc_date}
+                onChange={(e) => update("qc_date", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Overrides the recommended QC date.</p>
             </div>
           </div>
 

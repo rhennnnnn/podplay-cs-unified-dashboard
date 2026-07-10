@@ -24,10 +24,12 @@ import {
   ExternalLink,
   MoreHorizontal,
   PackageCheck,
+  PackageX,
   Plus,
   Search,
   ShieldAlert,
   Truck,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,18 +43,16 @@ import {
   isOpeningThisWeek,
   openReadinessChecklist,
 } from "@/lib/client-hub";
-import { getOpeningDateTier, OPENING_TIER_TEXT_CLASS, type OpeningDateTier } from "@/lib/opening-date-status";
+import { OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
 import {
-  boxShippedLateTier,
+  boxDeliveredTier,
+  boxShippedTier,
   boxSummary,
   getBoxCells,
   isNa,
   parseFlexDate,
-  resolveHardwareDeliveryDate,
-  shippedLateTier,
-  startOfDay,
 } from "@/lib/tracker-mrp";
-import { computeRecommendedQcDate, qcConflict } from "@/lib/qc-date";
+import { computeRowFlags, type RowFlags } from "@/lib/tracker-flags";
 import type { MrpRecord } from "@/lib/mrp";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -99,17 +99,19 @@ const STATUS_SORT_RANK: Record<LocationStatus, number> = {
   opened: 3,
 };
 
-// Per-location computed alert flags — drives the conflict stat cards, row-level
-// highlight and the red "missing" nudges. Recomputed from locations + MRP map.
-interface RowFlags {
-  missingOpening: boolean;
-  missingHardware: boolean;
-  hardwareLate: Exclude<OpeningDateTier, null> | null;
-  qc: { tier: Exclude<OpeningDateTier, null>; message: string; daysFromOpening: number } | null;
-  openingTier: OpeningDateTier;
-  hardware: { value: string | null; source: "mrp" | "manual" | null };
-  qcDate: Date | null;
-}
+type StatKey =
+  | "total-active"
+  | "at-risk"
+  | "opening-week"
+  | "followups"
+  | "conflicting"
+  | "qc-conflict"
+  | "shipped-late"
+  | "delivered-late"
+  | "missing-dates"
+  | "no-tracking"
+  | "total-opened"
+  | "opened-month";
 
 function formatFlexDate(value: string | null): string {
   const d = parseFlexDate(value);
@@ -117,10 +119,13 @@ function formatFlexDate(value: string | null): string {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function Missing() {
-  return <span className={cn("inline-flex items-center gap-1", OPENING_TIER_TEXT_CLASS.overdue)}>
-    <AlertTriangle className="h-3 w-3" />— (missing)
-  </span>;
+// Empty required-for-completeness date: warning icon + dash, red. No extra text.
+function MissingMark() {
+  return (
+    <span className={cn("inline-flex items-center gap-1", OPENING_TIER_TEXT_CLASS.overdue)}>
+      <AlertTriangle className="h-3 w-3" />—
+    </span>
+  );
 }
 
 function SortableHeader({
@@ -134,13 +139,27 @@ function SortableHeader({
 }) {
   const Icon = sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ArrowUpDown;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 hover:text-foreground"
-    >
+    <button type="button" onClick={onClick} className="flex items-center gap-1 hover:text-foreground">
       {label}
       <Icon className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+// Box-group column header — the single expand/collapse control for ALL rows.
+function BoxGroupHeader({
+  label,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button type="button" onClick={onToggle} className="flex items-center gap-1 hover:text-foreground">
+      {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      {label}
     </button>
   );
 }
@@ -155,54 +174,43 @@ function FollowUpTag({ label, done, overdue }: { label: string; done: boolean; o
   );
 }
 
-// Compact + inline-expandable box group cell (Shipped or Delivered).
 function BoxGroupCell({
   record,
   kind,
   expanded,
-  onToggle,
+  alert,
 }: {
   record: MrpRecord | null;
   kind: "shipped" | "delivered";
   expanded: boolean;
-  onToggle: () => void;
+  alert: "late" | "overdue" | null;
 }) {
   const cells = getBoxCells(record).filter((b) => b.applicable);
-  if (!record || cells.length === 0) {
-    return <span className="text-muted-foreground">—</span>;
-  }
+  if (!record || cells.length === 0) return <span className="text-muted-foreground">—</span>;
   const summary = boxSummary(record, kind);
-  // Shipped-late coloring applies to the Shipped group only.
-  const summaryTier = kind === "shipped" ? shippedLateTier(record) : null;
   const label = kind === "shipped" ? "Shipped" : "Delivered";
 
+  if (!expanded) {
+    return (
+      <span className={alert ? OPENING_TIER_TEXT_CLASS[alert] : ""}>
+        {summary.done}/{summary.total} {label}
+      </span>
+    );
+  }
+
   return (
-    <div onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex items-center gap-1 text-sm hover:text-foreground"
-      >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span className={summaryTier ? OPENING_TIER_TEXT_CLASS[summaryTier] : ""}>
-          {summary.done}/{summary.total} {label}
-        </span>
-      </button>
-      {expanded && (
-        <div className="mt-1.5 space-y-1 pl-4 text-xs">
-          {cells.map((b) => {
-            const raw = kind === "shipped" ? b.shipped : b.delivered;
-            const boxTier = kind === "shipped" ? boxShippedLateTier(record, b.index) : null;
-            const display = isNa(raw) ? (kind === "shipped" ? "not shipped" : "not delivered") : formatFlexDate(raw);
-            return (
-              <div key={b.index} className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Box {b.index}</span>
-                <span className={boxTier ? OPENING_TIER_TEXT_CLASS[boxTier] : ""}>{display}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div className="space-y-1 text-xs">
+      {cells.map((b) => {
+        const raw = kind === "shipped" ? b.shipped : b.delivered;
+        const tier = kind === "shipped" ? boxShippedTier(record, b.index) : boxDeliveredTier(record, b.index);
+        const display = isNa(raw) ? (kind === "shipped" ? "not shipped" : "not delivered") : formatFlexDate(raw);
+        return (
+          <div key={b.index} className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Box {b.index}</span>
+            <span className={tier ? OPENING_TIER_TEXT_CLASS[tier] : ""}>{display}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -211,19 +219,6 @@ interface ReadinessInfo {
   pct: number;
   token: string;
 }
-
-// Stat-card filter definitions. `tab` is the tab a card's rows live on — clicking
-// a card auto-switches to that tab so the user never lands on a silent empty table.
-type StatKey =
-  | "total-active"
-  | "at-risk"
-  | "opening-week"
-  | "followups"
-  | "opened-month"
-  | "conflicting"
-  | "qc-conflict"
-  | "hardware-late"
-  | "missing-dates";
 
 export function ClientsTable({
   initialLocations,
@@ -236,7 +231,8 @@ export function ClientsTable({
   const [readinessByLocation, setReadinessByLocation] = React.useState<Record<string, ReadinessInfo>>({});
   const [tab, setTab] = React.useState<Tab>("active");
   const [statFilter, setStatFilter] = React.useState<StatKey | null>(null);
-  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const [expandShipped, setExpandShipped] = React.useState(false);
+  const [expandDelivered, setExpandDelivered] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [clientFilter, setClientFilter] = React.useState<string>("all");
   const [locationFilter, setLocationFilter] = React.useState<string>("all");
@@ -300,48 +296,13 @@ export function ClientsTable({
     }
   }
 
-  // Compute alert flags per location once (MRP-aware). Guards on "opened" so
-  // completed rows never light up conflict/missing styling.
   const flagsByLocation = React.useMemo(() => {
-    const today = startOfDay(new Date());
     const map: Record<string, RowFlags> = {};
     for (const l of locations) {
-      const mrp = mrpByLocation[l.id] ?? null;
-      const completed = l.status === "opened";
-      const hardware = resolveHardwareDeliveryDate(mrp, l.delivery_date);
-      const qcDate = computeRecommendedQcDate(mrp);
-      const conflict = completed ? null : qcConflict(qcDate, l.opening_date);
-      map[l.id] = {
-        missingOpening: !completed && !l.opening_date,
-        missingHardware: !completed && hardware.value === null,
-        hardwareLate: completed ? null : shippedLateTier(mrp, today),
-        qc: conflict,
-        openingTier: completed ? null : getOpeningDateTier(l.opening_date, completed),
-        hardware,
-        qcDate,
-      };
+      map[l.id] = computeRowFlags(l, mrpByLocation[l.id] ?? null);
     }
     return map;
   }, [locations, mrpByLocation]);
-
-  // A row "needs attention" (row-level highlight, Part F) when any amber/red
-  // signal is present — deliberately excludes the blue "upcoming" / green
-  // "today" opening tiers, which are informational, not problems.
-  const rowNeedsAttention = React.useCallback(
-    (id: string) => {
-      const f = flagsByLocation[id];
-      if (!f) return false;
-      return (
-        f.missingOpening ||
-        f.missingHardware ||
-        f.hardwareLate !== null ||
-        f.qc !== null ||
-        f.openingTier === "late" ||
-        f.openingTier === "overdue"
-      );
-    },
-    [flagsByLocation]
-  );
 
   const clients = React.useMemo(
     () => Array.from(new Set(locations.map((l) => l.client_name).filter(Boolean))) as string[],
@@ -365,7 +326,7 @@ export function ClientsTable({
     setLocationFilter("all");
   }
 
-  // Predicate for each stat card (Total Active is the "clear" card, no predicate).
+  // Predicate for each filterable stat card.
   const statMatches = React.useCallback(
     (key: StatKey, l: Location): boolean => {
       const f = flagsByLocation[l.id];
@@ -379,20 +340,24 @@ export function ClientsTable({
         case "opened-month":
           return isOpenedThisMonth(l);
         case "qc-conflict":
-          return l.status !== "opened" && !!f?.qc;
-        case "hardware-late":
-          return l.status !== "opened" && f?.hardwareLate !== null;
+          return !!f?.qc;
+        case "shipped-late":
+          return f?.shippedOverdue ?? false;
+        case "delivered-late":
+          return f?.deliveredOverdue ?? false;
         case "missing-dates":
-          return l.status !== "opened" && (!!f?.missingOpening || !!f?.missingHardware);
+          return !!f && (f.missingOpening || f.missingPresale || f.missingHardware);
+        case "no-tracking":
+          return f?.noTracking ?? false;
         case "conflicting":
+          // Real date conflicts only — NOT missing dates.
           return (
-            l.status !== "opened" &&
-            (!!f?.qc ||
-              f?.hardwareLate !== null ||
-              !!f?.missingOpening ||
-              !!f?.missingHardware ||
-              f?.openingTier === "late" ||
-              f?.openingTier === "overdue")
+            !!f &&
+            (!!f.qc ||
+              f.shippedAlert !== null ||
+              f.deliveredAlert !== null ||
+              f.openingTier === "late" ||
+              f.openingTier === "overdue")
           );
         default:
           return true;
@@ -401,15 +366,17 @@ export function ClientsTable({
     [flagsByLocation]
   );
 
+  const activeRows = React.useMemo(() => locations.filter((l) => l.status !== "opened"), [locations]);
+  const openedRows = React.useMemo(() => locations.filter((l) => l.status === "opened"), [locations]);
+  const tabRows = tab === "opened" ? openedRows : activeRows;
+
   const filtered = React.useMemo(() => {
-    return locations.filter((l) => {
-      const isOpened = l.status === "opened";
-      if (tab === "opened" && !isOpened) return false;
-      if (tab === "active" && isOpened) return false;
+    return tabRows.filter((l) => {
       if (clientFilter !== "all" && l.client_name !== clientFilter) return false;
       if (locationFilter !== "all" && l.name !== locationFilter) return false;
       if (tierFilter !== "all" && l.tier !== tierFilter) return false;
-      if (statFilter && statFilter !== "total-active" && !statMatches(statFilter, l)) return false;
+      if (statFilter && statFilter !== "total-active" && statFilter !== "total-opened" && !statMatches(statFilter, l))
+        return false;
       if (search) {
         const q = search.toLowerCase();
         const haystack = `${l.client_name ?? ""} ${l.name} ${l.tracker ?? ""}`.toLowerCase();
@@ -417,47 +384,26 @@ export function ClientsTable({
       }
       return true;
     });
-  }, [locations, tab, clientFilter, locationFilter, tierFilter, statFilter, statMatches, search]);
+  }, [tabRows, clientFilter, locationFilter, tierFilter, statFilter, statMatches, search]);
 
   const stats = React.useMemo(() => computeClientStats(locations), [locations]);
 
-  const conflictCounts = React.useMemo(() => {
-    return {
-      conflicting: locations.filter((l) => statMatches("conflicting", l)).length,
-      qcConflict: locations.filter((l) => statMatches("qc-conflict", l)).length,
-      hardwareLate: locations.filter((l) => statMatches("hardware-late", l)).length,
-      missingDates: locations.filter((l) => statMatches("missing-dates", l)).length,
-    };
-  }, [locations, statMatches]);
+  // All Data Health / conflict counts are scoped to the CURRENT tab's rows so a
+  // card never promises rows that live on the other tab (which produced a silent
+  // empty table before).
+  const count = React.useCallback((key: StatKey) => tabRows.filter((l) => statMatches(key, l)).length, [tabRows, statMatches]);
 
-  // Card tab ownership — Opened This Month lives on the Opened tab; everything
-  // else is an Active-tab concept.
-  const cardTab: Record<StatKey, Tab> = {
-    "total-active": "active",
-    "at-risk": "active",
-    "opening-week": "active",
-    followups: "active",
-    "opened-month": "opened",
-    conflicting: "active",
-    "qc-conflict": "active",
-    "hardware-late": "active",
-    "missing-dates": "active",
-  };
-
-  function handleStatCard(key: StatKey) {
-    if (key === "total-active") {
-      setStatFilter(null);
-      setTab("active");
-      return;
-    }
-    const nextTab = cardTab[key];
-    setTab(nextTab);
-    setStatFilter((prev) => (prev === key ? null : key));
+  function handleTabChange(next: Tab) {
+    setTab(next);
+    setStatFilter(null); // filters are tab-scoped; clear on switch
   }
 
-  function toggleExpand(id: string, kind: "shipped" | "delivered") {
-    const k = `${id}:${kind}`;
-    setExpanded((prev) => ({ ...prev, [k]: !prev[k] }));
+  function handleStatCard(key: StatKey) {
+    if (key === "total-active" || key === "total-opened") {
+      setStatFilter(null);
+      return;
+    }
+    setStatFilter((prev) => (prev === key ? null : key));
   }
 
   const columns = React.useMemo<ColumnDef<Location>[]>(() => {
@@ -470,11 +416,7 @@ export function ClientsTable({
     const base: ColumnDef<Location>[] = [
       {
         header: ({ column }) => (
-          <SortableHeader
-            label="Client Name"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Client Name" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorKey: "client_name",
         sortingFn: groupedSort,
@@ -482,22 +424,14 @@ export function ClientsTable({
       },
       {
         header: ({ column }) => (
-          <SortableHeader
-            label="Location"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Location" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorKey: "name",
         sortingFn: groupedSort,
       },
       {
         header: ({ column }) => (
-          <SortableHeader
-            label="Tier"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Tier" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorKey: "tier",
         cell: ({ row }) => row.original.tier || "—",
@@ -515,11 +449,9 @@ export function ClientsTable({
         cell: ({ row }) => {
           const l = row.original;
           const dateStr = tab === "opened" ? l.opened_date : l.opening_date;
-          if (tab === "active" && !dateStr) {
-            return <Missing />;
-          }
+          if (tab === "active" && !dateStr) return <MissingMark />;
           const relative = formatRelativeDays(dateStr);
-          const tier = tab === "opened" ? null : getOpeningDateTier(l.opening_date, l.status === "opened");
+          const tier = tab === "opened" ? null : flagsByLocation[l.id]?.openingTier ?? null;
           return (
             <div>
               <div className={tier ? OPENING_TIER_TEXT_CLASS[tier] : ""}>
@@ -534,24 +466,19 @@ export function ClientsTable({
       {
         id: "presale_date",
         header: ({ column }) => (
-          <SortableHeader
-            label="Pre-sale Date"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Pre-sale Date" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorFn: (l) => l.presale_date,
-        cell: ({ row }) => (row.original.presale_date ? formatDate(row.original.presale_date) : "—"),
+        cell: ({ row }) => {
+          const l = row.original;
+          if (l.presale_date) return formatDate(l.presale_date);
+          return l.status === "opened" ? "—" : <MissingMark />;
+        },
       },
-      // Hardware Delivery Date — MRP-sourced, manual delivery_date fallback.
       {
         id: "hardware_delivery",
         header: ({ column }) => (
-          <SortableHeader
-            label="Hardware Delivery Date"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Hardware Delivery Date" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorFn: (l) => {
           const d = parseFlexDate(flagsByLocation[l.id]?.hardware.value ?? null);
@@ -560,9 +487,7 @@ export function ClientsTable({
         cell: ({ row }) => {
           const f = flagsByLocation[row.original.id];
           const hw = f?.hardware ?? { value: null, source: null };
-          if (!hw.value) {
-            return row.original.status === "opened" ? <span className="text-muted-foreground">—</span> : <Missing />;
-          }
+          if (!hw.value) return row.original.status === "opened" ? <span className="text-muted-foreground">—</span> : <MissingMark />;
           return (
             <div>
               <div>{formatFlexDate(hw.value)}</div>
@@ -573,68 +498,70 @@ export function ClientsTable({
       },
       {
         id: "box_shipped",
-        header: "PP Hardware Box Shipped",
+        header: () => <BoxGroupHeader label="PP Hardware Box Shipped" expanded={expandShipped} onToggle={() => setExpandShipped((v) => !v)} />,
         enableSorting: false,
         cell: ({ row }) => (
           <BoxGroupCell
             record={mrpByLocation[row.original.id] ?? null}
             kind="shipped"
-            expanded={!!expanded[`${row.original.id}:shipped`]}
-            onToggle={() => toggleExpand(row.original.id, "shipped")}
+            expanded={expandShipped}
+            alert={flagsByLocation[row.original.id]?.shippedAlert ?? null}
           />
         ),
       },
       {
         id: "box_delivered",
-        header: "PP Hardware Box Delivered",
+        header: () => <BoxGroupHeader label="PP Hardware Box Delivered" expanded={expandDelivered} onToggle={() => setExpandDelivered((v) => !v)} />,
         enableSorting: false,
         cell: ({ row }) => (
           <BoxGroupCell
             record={mrpByLocation[row.original.id] ?? null}
             kind="delivered"
-            expanded={!!expanded[`${row.original.id}:delivered`]}
-            onToggle={() => toggleExpand(row.original.id, "delivered")}
+            expanded={expandDelivered}
+            alert={flagsByLocation[row.original.id]?.deliveredAlert ?? null}
           />
         ),
       },
-      // Recommended QC Date — computed (Part E), with conflict tier + tooltip.
       {
         id: "qc_date",
-        header: "Recommended QC Date",
+        header: "QC Date",
         enableSorting: false,
         cell: ({ row }) => {
           const f = flagsByLocation[row.original.id];
-          if (!f?.qcDate) return <span className="text-muted-foreground">—</span>;
-          const label = f.qcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+          if (!f?.effectiveQcDate) return <span className="text-muted-foreground">—</span>;
+          const label = f.effectiveQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
           return (
-            <span
-              className={f.qc ? OPENING_TIER_TEXT_CLASS[f.qc.tier] : ""}
-              title={f.qc?.message}
-            >
-              {label}
-            </span>
+            <div>
+              <span className={f.qc ? OPENING_TIER_TEXT_CLASS[f.qc.tier] : ""} title={f.qc?.message}>
+                {label}
+              </span>
+              <div className="text-xs text-muted-foreground">{f.qcSource === "manual" ? "manual" : "recommended"}</div>
+            </div>
           );
         },
       },
       {
         header: ({ column }) => (
-          <SortableHeader
-            label="Tracking"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Tracking" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorKey: "tracker",
-        cell: ({ row }) => row.original.tracker || "—",
+        cell: ({ row }) => {
+          const f = flagsByLocation[row.original.id];
+          if (f?.noTracking)
+            return (
+              <span className={cn("inline-flex items-center gap-1", OPENING_TIER_TEXT_CLASS.overdue)}>
+                <AlertTriangle className="h-3 w-3" />None
+              </span>
+            );
+          return row.original.tracker;
+        },
       },
       {
         header: "Notes",
         accessorKey: "notes",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-xs text-sm text-muted-foreground">
-            {row.original.notes || "—"}
-          </span>
+          <span className="line-clamp-2 max-w-xs text-sm text-muted-foreground">{row.original.notes || "—"}</span>
         ),
       },
       {
@@ -647,12 +574,7 @@ export function ClientsTable({
             <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <Progress value={info?.pct ?? 0} className="h-1.5 w-16" />
               <span className="w-8 text-xs text-muted-foreground">{info?.pct ?? 0}%</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleOpenReadiness(row.original.id)}
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenReadiness(row.original.id)}>
                 <ExternalLink className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -661,26 +583,16 @@ export function ClientsTable({
       },
       {
         header: ({ column }) => (
-          <SortableHeader
-            label="Status"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Status" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorFn: (l) => STATUS_SORT_RANK[l.status],
         id: "status",
-        cell: ({ row }) => (
-          <StatusQuickEdit location={row.original} userEmail={userEmail} onChanged={refresh} />
-        ),
+        cell: ({ row }) => <StatusQuickEdit location={row.original} userEmail={userEmail} onChanged={refresh} />,
       },
       {
         id: "followUp",
         header: ({ column }) => (
-          <SortableHeader
-            label="Follow-up"
-            sorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          />
+          <SortableHeader label="Follow-up" sorted={column.getIsSorted()} onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />
         ),
         accessorFn: (l) => (isFollowUpOverdue(l) ? 1 : 0),
         cell: ({ row }) => {
@@ -703,12 +615,7 @@ export function ClientsTable({
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => e.stopPropagation()}
-              className="h-8 w-8"
-            >
+            <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()} className="h-8 w-8">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -748,7 +655,7 @@ export function ClientsTable({
 
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, readinessByLocation, userEmail, mrpByLocation, flagsByLocation, expanded]);
+  }, [tab, readinessByLocation, userEmail, mrpByLocation, flagsByLocation, expandShipped, expandDelivered]);
 
   const table = useReactTable({
     data: filtered,
@@ -775,83 +682,35 @@ export function ClientsTable({
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard
-          label="Total Active"
-          value={stats.totalActive}
-          icon={ClipboardList}
-          active={statFilter === null}
-          onClick={() => handleStatCard("total-active")}
-        />
-        <StatCard
-          label="At Risk"
-          value={stats.atRisk}
-          icon={AlertTriangle}
-          active={statFilter === "at-risk"}
-          onClick={() => handleStatCard("at-risk")}
-        />
-        <StatCard
-          label="Opening This Week"
-          value={stats.openingThisWeek}
-          icon={CalendarClock}
-          active={statFilter === "opening-week"}
-          onClick={() => handleStatCard("opening-week")}
-        />
-        <StatCard
-          label="Follow-ups Overdue"
-          value={stats.followUpsOverdue}
-          icon={AlertTriangle}
-          active={statFilter === "followups"}
-          onClick={() => handleStatCard("followups")}
-        />
-        <StatCard
-          label="Opened This Month"
-          value={stats.openedThisMonth}
-          icon={CheckCircle2}
-          active={statFilter === "opened-month"}
-          onClick={() => handleStatCard("opened-month")}
-        />
-      </div>
+      {tab === "active" ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Total Active" value={stats.totalActive} icon={ClipboardList} active={statFilter === null} onClick={() => handleStatCard("total-active")} />
+            <StatCard label="At Risk" value={count("at-risk")} icon={AlertTriangle} active={statFilter === "at-risk"} onClick={() => handleStatCard("at-risk")} />
+            <StatCard label="Opening This Week" value={count("opening-week")} icon={CalendarClock} active={statFilter === "opening-week"} onClick={() => handleStatCard("opening-week")} />
+            <StatCard label="Follow-ups Overdue" value={count("followups")} icon={AlertTriangle} active={statFilter === "followups"} onClick={() => handleStatCard("followups")} />
+          </div>
 
-      <div className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data Health</p>
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data Health</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <StatCard label="Conflicting Dates" value={count("conflicting")} icon={ShieldAlert} tone="alert" active={statFilter === "conflicting"} onClick={() => handleStatCard("conflicting")} />
+              <StatCard label="QC-to-Opening Conflict" value={count("qc-conflict")} icon={CalendarClock} tone="alert" active={statFilter === "qc-conflict"} onClick={() => handleStatCard("qc-conflict")} />
+              <StatCard label="Not Shipped Past Delivery" value={count("shipped-late")} icon={Truck} tone="alert" active={statFilter === "shipped-late"} onClick={() => handleStatCard("shipped-late")} />
+              <StatCard label="Not Delivered Past Delivery" value={count("delivered-late")} icon={PackageX} tone="alert" active={statFilter === "delivered-late"} onClick={() => handleStatCard("delivered-late")} />
+              <StatCard label="Missing Required Dates" value={count("missing-dates")} icon={PackageCheck} tone="alert" active={statFilter === "missing-dates"} onClick={() => handleStatCard("missing-dates")} />
+              <StatCard label="No Tracking" value={count("no-tracking")} icon={UserX} tone="alert" active={statFilter === "no-tracking"} onClick={() => handleStatCard("no-tracking")} />
+            </div>
+          </div>
+        </>
+      ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Conflicting Dates"
-            value={conflictCounts.conflicting}
-            icon={ShieldAlert}
-            tone="alert"
-            active={statFilter === "conflicting"}
-            onClick={() => handleStatCard("conflicting")}
-          />
-          <StatCard
-            label="QC-to-Opening Conflict"
-            value={conflictCounts.qcConflict}
-            icon={CalendarClock}
-            tone="alert"
-            active={statFilter === "qc-conflict"}
-            onClick={() => handleStatCard("qc-conflict")}
-          />
-          <StatCard
-            label="Hardware Not Shipped Past Delivery"
-            value={conflictCounts.hardwareLate}
-            icon={Truck}
-            tone="alert"
-            active={statFilter === "hardware-late"}
-            onClick={() => handleStatCard("hardware-late")}
-          />
-          <StatCard
-            label="Missing Required Dates"
-            value={conflictCounts.missingDates}
-            icon={PackageCheck}
-            tone="alert"
-            active={statFilter === "missing-dates"}
-            onClick={() => handleStatCard("missing-dates")}
-          />
+          <StatCard label="Total Opened" value={openedRows.length} icon={CheckCircle2} active={statFilter === null} onClick={() => handleStatCard("total-opened")} />
+          <StatCard label="Opened This Month" value={count("opened-month")} icon={CheckCircle2} active={statFilter === "opened-month"} onClick={() => handleStatCard("opened-month")} />
         </div>
-      </div>
+      )}
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+      <Tabs value={tab} onValueChange={(v) => handleTabChange(v as Tab)}>
         <TabsList>
           <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="opened">Opened</TabsTrigger>
@@ -862,12 +721,7 @@ export function ClientsTable({
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:flex-wrap">
           <div className="relative flex-1 sm:min-w-[200px]">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by client, location, or tracking..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
+            <Input placeholder="Search by client, location, or tracking..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
           </div>
           <Select value={clientFilter} onValueChange={handleClientFilterChange}>
             <SelectTrigger className="sm:w-44">
@@ -928,9 +782,7 @@ export function ClientsTable({
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
                     <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -940,30 +792,25 @@ export function ClientsTable({
               {table.getRowModel().rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                    {statFilter
-                      ? "No rows match this stat card on this tab. Try clearing the filter or switching tabs."
-                      : "No clients match your filters."}
+                    {statFilter ? "No rows match this stat card. Clear the filter to see all rows." : "No clients match your filters."}
                   </TableCell>
                 </TableRow>
               ) : (
                 table.getRowModel().rows.map((row) => {
-                  const attention = tab === "active" && rowNeedsAttention(row.original.id);
+                  const f = flagsByLocation[row.original.id];
+                  const attention = tab === "active" && !!f?.needsAttention;
                   return (
                     <TableRow
                       key={row.id}
-                      className={cn(
-                        "cursor-pointer",
-                        attention && "border-l-2 border-l-destructive/60 bg-destructive/[0.04]"
-                      )}
+                      title={f && f.issues.length > 0 ? f.issues.join("\n") : undefined}
+                      className={cn("cursor-pointer", attention && "border-l-2 border-l-destructive/60 bg-destructive/[0.04]")}
                       onClick={() => {
                         setSelected(row.original);
                         setSheetOpen(true);
                       }}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
+                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                       ))}
                     </TableRow>
                   );
@@ -989,22 +836,9 @@ export function ClientsTable({
         onChanged={refresh}
       />
 
-      <ClientFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        location={editing}
-        userEmail={userEmail}
-        trackerRoster={trackerRoster}
-        onSaved={refresh}
-      />
+      <ClientFormDialog open={formOpen} onOpenChange={setFormOpen} location={editing} userEmail={userEmail} trackerRoster={trackerRoster} onSaved={refresh} />
 
-      <DeleteClientDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        location={deleting}
-        userEmail={userEmail}
-        onDeleted={refresh}
-      />
+      <DeleteClientDialog open={deleteOpen} onOpenChange={setDeleteOpen} location={deleting} userEmail={userEmail} onDeleted={refresh} />
     </div>
   );
 }
@@ -1024,6 +858,7 @@ function StatCard({
   onClick?: () => void;
   tone?: "default" | "alert";
 }) {
+  const alertOn = tone === "alert" && value > 0;
   return (
     <Card
       role="button"
@@ -1038,15 +873,15 @@ function StatCard({
       className={cn(
         "cursor-pointer transition-colors hover:border-accent/60",
         active && "border-accent ring-1 ring-accent",
-        tone === "alert" && value > 0 && "border-destructive/40"
+        alertOn && "border-destructive/40"
       )}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-        <Icon className={cn("h-4 w-4 text-muted-foreground", tone === "alert" && value > 0 && "text-destructive")} />
+        <Icon className={cn("h-4 w-4 text-muted-foreground", alertOn && "text-destructive")} />
       </CardHeader>
       <CardContent>
-        <div className={cn("text-2xl font-bold", tone === "alert" && value > 0 && "text-destructive")}>{value}</div>
+        <div className={cn("text-2xl font-bold", alertOn && "text-destructive")}>{value}</div>
       </CardContent>
     </Card>
   );

@@ -63,6 +63,9 @@ export function TrackOpeningDialog({
   const [name, setName] = React.useState("");
   const [tier, setTier] = React.useState("");
   const [openingDate, setOpeningDate] = React.useState("");
+  const [presaleDate, setPresaleDate] = React.useState("");
+  const [deliveryDate, setDeliveryDate] = React.useState("");
+  const [qcDate, setQcDate] = React.useState("");
   const [tracker, setTracker] = React.useState<string[]>([]);
   const [notes, setNotes] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -73,6 +76,9 @@ export function TrackOpeningDialog({
       setName(deal.properties.hs_name ?? "");
       setTier(tierToTrackerTier(deal.properties.podplay_tier));
       setOpeningDate(toIsoDate(deal.properties.grand_opening ?? deal.properties.anticipated_opening));
+      setPresaleDate("");
+      setDeliveryDate("");
+      setQcDate("");
       setTracker(trackerName ? [trackerName] : []);
       setNotes("");
     }
@@ -80,8 +86,8 @@ export function TrackOpeningDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!deal || !name.trim() || !openingDate) {
-      toast.error("Location name and opening date are required.");
+    if (!deal || !clientName.trim() || !name.trim() || !tier.trim() || tracker.length === 0) {
+      toast.error("Client Name, Location, Tier, and at least one Tracking name are required.");
       return;
     }
 
@@ -96,7 +102,10 @@ export function TrackOpeningDialog({
         client_name: clientName || null,
         name,
         tier: tier || null,
-        opening_date: openingDate,
+        opening_date: openingDate || null,
+        presale_date: presaleDate || null,
+        delivery_date: deliveryDate || null,
+        qc_date: qcDate || null,
         tracker: joinTracker(tracker),
         status: "on-track" as LocationStatus,
         notes: notes || null,
@@ -138,18 +147,18 @@ export function TrackOpeningDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="client_name">Client Name</Label>
-              <Input id="client_name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+              <Label htmlFor="client_name">Client Name *</Label>
+              <Input id="client_name" required value={clientName} onChange={(e) => setClientName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="name">Location</Label>
+              <Label htmlFor="name">Location *</Label>
               <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="tier">Tier</Label>
+              <Label htmlFor="tier">Tier *</Label>
               <Select value={tier} onValueChange={setTier}>
                 <SelectTrigger id="tier">
                   <SelectValue placeholder="Select tier..." />
@@ -165,18 +174,30 @@ export function TrackOpeningDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="opening_date">Opening Date</Label>
-              <Input
-                id="opening_date"
-                type="date"
-                required
-                value={openingDate}
-                onChange={(e) => setOpeningDate(e.target.value)}
-              />
+              <Input id="opening_date" type="date" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="presale_date">Pre-sale Date</Label>
+              <Input id="presale_date" type="date" value={presaleDate} onChange={(e) => setPresaleDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="delivery_date">Hardware Delivery Date (manual)</Label>
+              <Input id="delivery_date" type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="qc_date">QC Date (manual)</Label>
+              <Input id="qc_date" type="date" value={qcDate} onChange={(e) => setQcDate(e.target.value)} />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Tracking</Label>
+            <Label>Tracking *</Label>
             <TrackingMultiSelect selected={tracker} roster={trackerRoster} onChange={setTracker} />
           </div>
 

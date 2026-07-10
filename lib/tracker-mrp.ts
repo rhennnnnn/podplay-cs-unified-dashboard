@@ -76,36 +76,16 @@ export function boxSummary(record: MrpRecord | null, kind: BoxKind): BoxSummary 
   return { done, total: cells.length };
 }
 
-// Amber/red tier reusing the existing opening-date alert palette.
-// A box shipped-cell that is still empty AFTER the Hardware Delivery Date has
-// passed is "late": amber 1–3 days past, red >3 days past. Only meaningful for
-// applicable boxes with a hardware delivery date in the past.
-function lateTierForDaysPast(daysPast: number): Exclude<OpeningDateTier, null> | null {
-  if (daysPast <= 0) return null;
-  if (daysPast <= 3) return "late";
-  return "overdue";
+function daysBetween(from: Date, to: Date): number {
+  return Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / 86_400_000);
 }
 
-// Worst shipped-late tier across all applicable boxes whose shipped cell is empty
-// and whose hardware delivery date has already passed. null = nothing late.
-export function shippedLateTier(
-  record: MrpRecord | null,
-  today: Date = startOfDay(new Date())
-): Exclude<OpeningDateTier, null> | null {
-  if (!record) return null;
-  const hwd = parseFlexDate(record.hardwareDeliveryDate);
-  if (!hwd) return null;
-  const daysPast = Math.round((today.getTime() - startOfDay(hwd).getTime()) / 86_400_000);
-  if (daysPast <= 0) return null;
-
-  const anyUnshipped = getBoxCells(record).some((b) => b.applicable && isNa(b.shipped));
-  if (!anyUnshipped) return null;
-  return lateTierForDaysPast(daysPast);
-}
-
-// Per-box shipped-late tier (for the expanded view): a box is late only if its
-// own shipped cell is empty and the hardware delivery date has passed.
-export function boxShippedLateTier(
+// Per-box SHIPPED tier (only for a box whose shipped cell is still empty),
+// relative to the Hardware Delivery Date:
+//   - delivery date already past           -> "overdue" (red)
+//   - delivery date today or within 3 days  -> "late"    (amber)
+//   - otherwise                              -> null
+export function boxShippedTier(
   record: MrpRecord | null,
   boxIndex: number,
   today: Date = startOfDay(new Date())
@@ -115,8 +95,73 @@ export function boxShippedLateTier(
   if (!hwd) return null;
   const box = getBoxCells(record).find((b) => b.index === boxIndex);
   if (!box || !box.applicable || !isNa(box.shipped)) return null;
-  const daysPast = Math.round((today.getTime() - startOfDay(hwd).getTime()) / 86_400_000);
-  return lateTierForDaysPast(daysPast);
+  const daysUntil = daysBetween(today, hwd);
+  if (daysUntil < 0) return "overdue";
+  if (daysUntil <= 3) return "late";
+  return null;
+}
+
+// Per-box DELIVERED tier, relative to the Hardware Delivery Date.
+// Not yet delivered (blank):
+//   - delivery date past   -> "overdue" (red)
+//   - delivery date today  -> "late"    (amber)
+//   - otherwise            -> null
+// Delivered (has a date):
+//   - delivered after the delivery date -> "upcoming" (blue, informational: late arrival)
+//   - delivered on/before                -> "today"    (green, on time)
+export function boxDeliveredTier(
+  record: MrpRecord | null,
+  boxIndex: number,
+  today: Date = startOfDay(new Date())
+): OpeningDateTier {
+  if (!record) return null;
+  const box = getBoxCells(record).find((b) => b.index === boxIndex);
+  if (!box || !box.applicable) return null;
+  const hwd = parseFlexDate(record.hardwareDeliveryDate);
+
+  const deliveredDate = parseFlexDate(box.delivered);
+  if (deliveredDate) {
+    if (!hwd) return "today"; // delivered, nothing to compare against — treat as on time
+    return daysBetween(hwd, deliveredDate) > 0 ? "upcoming" : "today";
+  }
+
+  // Not yet delivered.
+  if (!hwd) return null;
+  const daysUntil = daysBetween(today, hwd);
+  if (daysUntil < 0) return "overdue";
+  if (daysUntil === 0) return "late";
+  return null;
+}
+
+const ALERT_RANK: Record<string, number> = { overdue: 2, late: 1 };
+
+// Worst ALERT tier (amber/red only — blue/green ignored) across all applicable
+// boxes for a group. Drives the compact summary color + Data Health cards.
+export function boxGroupAlertTier(
+  record: MrpRecord | null,
+  kind: BoxKind,
+  today: Date = startOfDay(new Date())
+): "late" | "overdue" | null {
+  if (!record) return null;
+  let worst: "late" | "overdue" | null = null;
+  for (const b of getBoxCells(record)) {
+    if (!b.applicable) continue;
+    const tier = kind === "shipped" ? boxShippedTier(record, b.index, today) : boxDeliveredTier(record, b.index, today);
+    if (tier === "late" || tier === "overdue") {
+      if (!worst || ALERT_RANK[tier] > ALERT_RANK[worst]) worst = tier;
+    }
+  }
+  return worst;
+}
+
+// True when any applicable box in the group is "overdue" (red) — the "past
+// delivery date" condition behind the Data Health cards.
+export function boxGroupOverdue(
+  record: MrpRecord | null,
+  kind: BoxKind,
+  today: Date = startOfDay(new Date())
+): boolean {
+  return boxGroupAlertTier(record, kind, today) === "overdue";
 }
 
 // The single Hardware Delivery Date shown in the tracker: MRP's value when a
