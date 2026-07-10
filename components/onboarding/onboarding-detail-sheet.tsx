@@ -115,6 +115,10 @@ export function OnboardingDetailSheet({
   const owner = props?.hubspot_owner_id ? ownerMap.get(props.hubspot_owner_id) : undefined;
   const projectManager = props?.podplay_project_manager ? ownerMap.get(props.podplay_project_manager) : undefined;
   const closeDate = formatDateWithRelative(props?.grand_opening ?? props?.anticipated_opening ?? null);
+  // Once the onboarding is completed, the opening date is history — never flag it
+  // as overdue.
+  const isCompleted = Boolean(props?.onboarding_completed_date);
+  const openingOverdue = Boolean(closeDate?.overdue) && !isCompleted;
   const contact = data?.contacts[0];
   const company = data?.companies[0];
 
@@ -174,8 +178,8 @@ export function OnboardingDetailSheet({
                   label="Opening Date"
                   value={
                     closeDate ? (
-                      <span className={closeDate.overdue ? "text-destructive" : ""}>
-                        {closeDate.absolute} {closeDate.overdue && "(overdue)"}
+                      <span className={openingOverdue ? "text-destructive" : ""}>
+                        {closeDate.absolute} {openingOverdue && "(overdue)"}
                       </span>
                     ) : null
                   }
