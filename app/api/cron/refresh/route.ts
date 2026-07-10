@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildPipelineDeals } from "@/lib/onboarding-deals";
 import { refreshMrpRecords } from "@/lib/onboarding-sync";
 import { writeSnapshot } from "@/lib/snapshot";
-import type { PipelineKey } from "@/lib/hubspot";
+import { fetchOwnersLive, type PipelineKey } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,6 +21,13 @@ async function runRefresh() {
     out.mrp = "ok";
   } catch {
     out.mrp = "error";
+  }
+
+  try {
+    await writeSnapshot("hubspot:owners", await fetchOwnersLive());
+    out.owners = "ok";
+  } catch {
+    out.owners = "error";
   }
 
   for (const pipeline of ["basic", "pro"] as PipelineKey[]) {

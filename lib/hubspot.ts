@@ -164,6 +164,22 @@ export interface HubspotOwner {
   email: string;
 }
 
+interface OwnersApiResponse {
+  results: { id: string; firstName: string; lastName: string; email: string }[];
+}
+
+// Live owner-roster pull. Shared by the owners read route and the cron
+// refresher so both write the same shape into the `hubspot:owners` snapshot.
+export async function fetchOwnersLive(): Promise<HubspotOwner[]> {
+  const data = await hubspotFetch<OwnersApiResponse>("/crm/v3/owners?limit=100");
+  return data.results.map((o) => ({
+    id: o.id,
+    firstName: o.firstName ?? "",
+    lastName: o.lastName ?? "",
+    email: o.email ?? "",
+  }));
+}
+
 export interface ActivityItem {
   type: "note" | "email" | "call" | "task";
   timestamp: string;
