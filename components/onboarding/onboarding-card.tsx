@@ -92,7 +92,7 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
           <span className="truncate">{owner ? `${owner.firstName} ${owner.lastName}`.trim() : "Unassigned"}</span>
         </span>
         {closeDate && (
-          <span className={closeDate.overdue ? "shrink-0 font-medium text-destructive" : "shrink-0"}>
+          <span className={closeDate.overdue && !stageIsClosed ? "shrink-0 font-medium text-destructive" : "shrink-0"}>
             {closeDate.absolute}
           </span>
         )}
