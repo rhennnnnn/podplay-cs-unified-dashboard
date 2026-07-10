@@ -304,22 +304,28 @@ export function ClientsTable({
     return map;
   }, [locations, mrpByLocation]);
 
+  const activeRows = React.useMemo(() => locations.filter((l) => l.status !== "opened"), [locations]);
+  const openedRows = React.useMemo(() => locations.filter((l) => l.status === "opened"), [locations]);
+  const tabRows = tab === "opened" ? openedRows : activeRows;
+
+  // Dropdown options are scoped to the CURRENT tab's rows only — a value that
+  // lives solely on the other tab (e.g. an opened-only client) never appears.
   const clients = React.useMemo(
-    () => Array.from(new Set(locations.map((l) => l.client_name).filter(Boolean))) as string[],
-    [locations]
+    () => Array.from(new Set(tabRows.map((l) => l.client_name).filter(Boolean))) as string[],
+    [tabRows]
   );
 
   const tiers = React.useMemo(
-    () => Array.from(new Set(locations.map((l) => l.tier).filter(Boolean))) as string[],
-    [locations]
+    () => Array.from(new Set(tabRows.map((l) => l.tier).filter(Boolean))) as string[],
+    [tabRows]
   );
 
   const trackerRoster = loginRoster;
 
   const locationOptions = React.useMemo(() => {
-    const scoped = clientFilter === "all" ? locations : locations.filter((l) => l.client_name === clientFilter);
+    const scoped = clientFilter === "all" ? tabRows : tabRows.filter((l) => l.client_name === clientFilter);
     return Array.from(new Set(scoped.map((l) => l.name)));
-  }, [locations, clientFilter]);
+  }, [tabRows, clientFilter]);
 
   function handleClientFilterChange(value: string) {
     setClientFilter(value);
@@ -365,10 +371,6 @@ export function ClientsTable({
     },
     [flagsByLocation]
   );
-
-  const activeRows = React.useMemo(() => locations.filter((l) => l.status !== "opened"), [locations]);
-  const openedRows = React.useMemo(() => locations.filter((l) => l.status === "opened"), [locations]);
-  const tabRows = tab === "opened" ? openedRows : activeRows;
 
   const filtered = React.useMemo(() => {
     return tabRows.filter((l) => {
@@ -487,7 +489,12 @@ export function ClientsTable({
         cell: ({ row }) => {
           const f = flagsByLocation[row.original.id];
           const hw = f?.hardware ?? { value: null, source: null };
-          if (!hw.value) return row.original.status === "opened" ? <span className="text-muted-foreground">—</span> : <MissingMark />;
+          if (!hw.value) {
+            // Only required (non-Basic) active rows get the red missing nudge;
+            // Basic (+) shows a plain dash.
+            const needsFlag = row.original.status !== "opened" && (f?.hardwareRequired ?? true);
+            return needsFlag ? <MissingMark /> : <span className="text-muted-foreground">—</span>;
+          }
           return (
             <div>
               <div>{formatFlexDate(hw.value)}</div>
@@ -528,14 +535,23 @@ export function ClientsTable({
         enableSorting: false,
         cell: ({ row }) => {
           const f = flagsByLocation[row.original.id];
-          if (!f?.effectiveQcDate) return <span className="text-muted-foreground">—</span>;
-          const label = f.effectiveQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+          if (!f?.recommendedQcDate && !f?.manualQcDate) return <span className="text-muted-foreground">—</span>;
+          const fmt = (d: Date) => d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+          const conflictCls = f.qc ? OPENING_TIER_TEXT_CLASS[f.qc.tier] : "";
           return (
-            <div>
-              <span className={f.qc ? OPENING_TIER_TEXT_CLASS[f.qc.tier] : ""} title={f.qc?.message}>
-                {label}
-              </span>
-              <div className="text-xs text-muted-foreground">{f.qcSource === "manual" ? "manual" : "recommended"}</div>
+            <div className="space-y-0.5 text-sm">
+              {f.recommendedQcDate && (
+                <div className={f.qcSource === "recommended" ? conflictCls : ""} title={f.qcSource === "recommended" ? f.qc?.message : undefined}>
+                  <span className="text-xs text-muted-foreground">Recommended: </span>
+                  {fmt(f.recommendedQcDate)}
+                </div>
+              )}
+              {f.manualQcDate && (
+                <div className={f.qcSource === "manual" ? conflictCls : ""} title={f.qcSource === "manual" ? f.qc?.message : undefined}>
+                  <span className="text-xs text-muted-foreground">Manual: </span>
+                  {fmt(f.manualQcDate)}
+                </div>
+              )}
             </div>
           );
         },
@@ -691,15 +707,15 @@ export function ClientsTable({
             <StatCard label="Follow-ups Overdue" value={count("followups")} icon={AlertTriangle} active={statFilter === "followups"} onClick={() => handleStatCard("followups")} />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data Health</p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <StatCard label="Conflicting Dates" value={count("conflicting")} icon={ShieldAlert} tone="alert" active={statFilter === "conflicting"} onClick={() => handleStatCard("conflicting")} />
-              <StatCard label="QC-to-Opening Conflict" value={count("qc-conflict")} icon={CalendarClock} tone="alert" active={statFilter === "qc-conflict"} onClick={() => handleStatCard("qc-conflict")} />
-              <StatCard label="Not Shipped Past Delivery" value={count("shipped-late")} icon={Truck} tone="alert" active={statFilter === "shipped-late"} onClick={() => handleStatCard("shipped-late")} />
-              <StatCard label="Not Delivered Past Delivery" value={count("delivered-late")} icon={PackageX} tone="alert" active={statFilter === "delivered-late"} onClick={() => handleStatCard("delivered-late")} />
-              <StatCard label="Missing Required Dates" value={count("missing-dates")} icon={PackageCheck} tone="alert" active={statFilter === "missing-dates"} onClick={() => handleStatCard("missing-dates")} />
-              <StatCard label="No Tracking" value={count("no-tracking")} icon={UserX} tone="alert" active={statFilter === "no-tracking"} onClick={() => handleStatCard("no-tracking")} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              <StatCard compact label="Conflicting Dates" value={count("conflicting")} icon={ShieldAlert} tone="alert" active={statFilter === "conflicting"} onClick={() => handleStatCard("conflicting")} />
+              <StatCard compact label="QC-to-Opening Conflict" value={count("qc-conflict")} icon={CalendarClock} tone="alert" active={statFilter === "qc-conflict"} onClick={() => handleStatCard("qc-conflict")} />
+              <StatCard compact label="Not Shipped Past Delivery" value={count("shipped-late")} icon={Truck} tone="alert" active={statFilter === "shipped-late"} onClick={() => handleStatCard("shipped-late")} />
+              <StatCard compact label="Not Delivered Past Delivery" value={count("delivered-late")} icon={PackageX} tone="alert" active={statFilter === "delivered-late"} onClick={() => handleStatCard("delivered-late")} />
+              <StatCard compact label="Missing Required Dates" value={count("missing-dates")} icon={PackageCheck} tone="alert" active={statFilter === "missing-dates"} onClick={() => handleStatCard("missing-dates")} />
+              <StatCard compact label="No Tracking" value={count("no-tracking")} icon={UserX} tone="alert" active={statFilter === "no-tracking"} onClick={() => handleStatCard("no-tracking")} />
             </div>
           </div>
         </>
@@ -850,6 +866,7 @@ function StatCard({
   active,
   onClick,
   tone = "default",
+  compact = false,
 }: {
   label: string;
   value: number;
@@ -857,25 +874,37 @@ function StatCard({
   active?: boolean;
   onClick?: () => void;
   tone?: "default" | "alert";
+  compact?: boolean;
 }) {
   const alertOn = tone === "alert" && value > 0;
+  const cardCls = cn(
+    "cursor-pointer transition-colors hover:border-accent/60",
+    active && "border-accent ring-1 ring-accent",
+    alertOn && "border-destructive/40"
+  );
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick?.();
+    }
+  };
+
+  if (compact) {
+    return (
+      <Card role="button" tabIndex={0} onClick={onClick} onKeyDown={handleKey} className={cn(cardCls, "p-2.5")}>
+        <div className="flex items-center gap-2">
+          <Icon className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground", alertOn && "text-destructive")} />
+          <div className="min-w-0">
+            <div className={cn("text-lg font-bold leading-none", alertOn && "text-destructive")}>{value}</div>
+            <div className="mt-1 truncate text-[11px] leading-tight text-muted-foreground" title={label}>{label}</div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick?.();
-        }
-      }}
-      className={cn(
-        "cursor-pointer transition-colors hover:border-accent/60",
-        active && "border-accent ring-1 ring-accent",
-        alertOn && "border-destructive/40"
-      )}
-    >
+    <Card role="button" tabIndex={0} onClick={onClick} onKeyDown={handleKey} className={cardCls}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
         <Icon className={cn("h-4 w-4 text-muted-foreground", alertOn && "text-destructive")} />

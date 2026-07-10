@@ -202,7 +202,7 @@ export function ClientDetailSheet({
                       <span className="ml-1 text-xs text-sidebar-foreground/50">(manual)</span>
                     )}
                   </>
-                ) : completed ? null : (
+                ) : completed || !flags.hardwareRequired ? null : (
                   <MissingValue />
                 )
               }
@@ -223,12 +223,26 @@ export function ClientDetailSheet({
             <Field
               label="QC Date"
               value={
-                flags.effectiveQcDate ? (
-                  <span className={qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""} title={qcConf?.message}>
-                    {flags.effectiveQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                    <span className="ml-1 text-xs text-sidebar-foreground/50">
-                      ({flags.qcSource === "manual" ? "manual" : "recommended"})
-                    </span>
+                flags.recommendedQcDate || flags.manualQcDate ? (
+                  <span className="space-y-0.5">
+                    {flags.recommendedQcDate && (
+                      <span
+                        className={`block ${flags.qcSource === "recommended" && qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""}`}
+                        title={flags.qcSource === "recommended" ? qcConf?.message : undefined}
+                      >
+                        <span className="text-xs text-sidebar-foreground/50">Recommended: </span>
+                        {flags.recommendedQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                    {flags.manualQcDate && (
+                      <span
+                        className={`block ${flags.qcSource === "manual" && qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""}`}
+                        title={flags.qcSource === "manual" ? qcConf?.message : undefined}
+                      >
+                        <span className="text-xs text-sidebar-foreground/50">Manual: </span>
+                        {flags.manualQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </span>
+                    )}
                   </span>
                 ) : null
               }

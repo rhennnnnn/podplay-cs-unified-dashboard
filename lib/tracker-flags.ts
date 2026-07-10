@@ -19,6 +19,7 @@ export interface RowFlags {
   missingPresale: boolean;
   missingHardware: boolean;
   noTracking: boolean;
+  hardwareRequired: boolean;
   shippedAlert: "late" | "overdue" | null;
   deliveredAlert: "late" | "overdue" | null;
   shippedOverdue: boolean;
@@ -41,6 +42,11 @@ export function computeRowFlags(
   today: Date = startOfDay(new Date())
 ): RowFlags {
   const completed = location.status === "opened";
+  // Basic (+) clubs don't ship the full hardware kit — hardware dates aren't
+  // required there, so an empty hardware delivery is NOT flagged. Hardware alerts
+  // only apply once a date is actually pulled from MRP or entered manually.
+  const isBasic = (location.tier ?? "").toLowerCase().startsWith("basic");
+  const hardwareRequired = !isBasic;
   const hardware = resolveHardwareDeliveryDate(mrp, location.delivery_date);
 
   const recommendedQcDate = computeRecommendedQcDate(mrp);
@@ -58,8 +64,9 @@ export function computeRowFlags(
   const flags: RowFlags = {
     missingOpening: !completed && !location.opening_date,
     missingPresale: !completed && !location.presale_date,
-    missingHardware: !completed && hardware.value === null,
+    missingHardware: !completed && hardwareRequired && hardware.value === null,
     noTracking: parseTracker(location.tracker).length === 0,
+    hardwareRequired,
     shippedAlert,
     deliveredAlert,
     shippedOverdue: shippedAlert === "overdue",

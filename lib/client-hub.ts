@@ -24,14 +24,19 @@ export function isFollowUpOverdue(location: Location): boolean {
   return isPastOpening && (!location.pre_open_done || !location.post_open_done);
 }
 
+// This calendar week, Monday–Sunday (not a rolling 7-day window).
 export function isOpeningThisWeek(location: Location): boolean {
   if (location.status === "opened" || !location.opening_date) return false;
   const opening = new Date(location.opening_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   opening.setHours(0, 0, 0, 0);
-  const diffDays = (opening.getTime() - today.getTime()) / 86_400_000;
-  return diffDays >= 0 && diffDays <= 7;
+  const dow = (today.getDay() + 6) % 7; // Mon=0 … Sun=6
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - dow);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return opening.getTime() >= monday.getTime() && opening.getTime() <= sunday.getTime();
 }
 
 export function isOpenedThisMonth(location: Location): boolean {
