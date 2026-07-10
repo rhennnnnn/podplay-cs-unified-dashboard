@@ -3,7 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Clock, Copy, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Clock, Copy, Eye, FileUp, Pencil, Plus, Search, Settings, Star, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import type { OpsArticle, OpsArticleStub, OpsCategory } from "@/lib/types";
@@ -32,6 +32,9 @@ const DeleteArticleDialog = dynamic(() =>
 );
 const ImportArticleDialog = dynamic(() =>
   import("@/components/ops-guide/import-article-dialog").then((m) => m.ImportArticleDialog)
+);
+const ManageVisibilityDialog = dynamic(() =>
+  import("@/components/ops-guide/manage-visibility-dialog").then((m) => m.ManageVisibilityDialog)
 );
 
 const FAVORITES_VIEW = "__favorites__";
@@ -87,6 +90,15 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
   const [deleteTarget, setDeleteTarget] = React.useState<OpsArticleStub | null>(null);
   const [categoryDialogOpen, setCategoryDialogOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
+  const [manageOpen, setManageOpen] = React.useState(false);
+
+  // Re-sync the visible grid (published articles only) after visibility toggles
+  // or deletes from the Manage dialog.
+  const refreshArticles = React.useCallback(() => {
+    fetchJson<{ articles: OpsArticleStub[] }>("/api/ops-guide")
+      .then((json) => setArticles(json.articles))
+      .catch(() => {});
+  }, []);
 
   // Load the caller's favorite ids once on mount (star state applies across every view).
   React.useEffect(() => {
@@ -465,6 +477,10 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                 Categories
               </Button>
             </div>
+            <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={() => setManageOpen(true)}>
+              <Eye className="h-3.5 w-3.5" />
+              Manage visibility
+            </Button>
           </div>
         )}
       </aside>
@@ -521,7 +537,7 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                   <Card
                     key={article.id}
                     onClick={() => handleSelect(article.id)}
-                    className="group cursor-pointer p-3 transition-colors hover:border-accent"
+                    className="group flex min-h-[7rem] cursor-pointer flex-col rounded-xl p-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <Badge className={cn("text-xs", categoryBadgeClass(categoryColorByName[article.category]))} variant="secondary">
@@ -569,9 +585,9 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
                         )}
                       </div>
                     </div>
-                    <p className="mt-1.5 line-clamp-1 text-sm font-semibold">{article.title}</p>
+                    <p className="mt-2 line-clamp-2 text-sm font-semibold leading-snug">{article.title}</p>
                     {excerptText && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{excerptText}</p>}
-                    <p className="mt-1.5 text-xs text-muted-foreground">{formatRelativeDate(article.updated_at)}</p>
+                    <p className="mt-auto pt-2 text-xs text-muted-foreground">{formatRelativeDate(article.updated_at)}</p>
                   </Card>
                 );
               })}
@@ -736,6 +752,11 @@ export function OpsGuideShell({ initialArticles, initialCategories, isAdmin }: O
               setFormDraft(draft);
               setFormOpen(true);
             }}
+          />
+          <ManageVisibilityDialog
+            open={manageOpen}
+            onOpenChange={setManageOpen}
+            onChanged={refreshArticles}
           />
         </>
       )}
