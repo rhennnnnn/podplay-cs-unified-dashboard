@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -333,24 +332,24 @@ export function OnboardingDetailSheet({
                 cached joined result (GET /api/mrp), never a live per-open
                 Sheets call. Greenfield/Migration and Quotes come from
                 HubSpot's own onboarding properties, not the MRP sheet. */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Deployment Status</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            {/* Plain section on the navy sheet (not a <Card> — bg-card is white
+                in light mode, which made the sidebar-foreground text unreadable). */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Deployment Status</p>
+              <div>
                 {mrpLoading ? (
                   <div className="space-y-2">
                     <Skeleton className="h-4 w-2/3" />
                     <Skeleton className="h-4 w-1/2" />
                   </div>
                 ) : mrpError ? (
-                  <p className="text-sm text-muted-foreground">MRP data unavailable.</p>
+                  <p className="text-sm text-sidebar-foreground/70">MRP data unavailable.</p>
                 ) : mrpData?.mrpStatus === "access_pending" ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-sidebar-foreground/70">
                     MRP access pending — waiting on Google Sheets permission.
                   </p>
                 ) : !mrpData?.record?.mrp ? (
-                  <p className="text-sm text-muted-foreground">No matching MRP record found.</p>
+                  <p className="text-sm text-sidebar-foreground/70">No matching MRP record found.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Customer" value={mrpData.record.mrp.customer} />
@@ -396,8 +395,8 @@ export function OnboardingDetailSheet({
                     <Field label="Quotes" value={props?.quotes} />
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             <Separator className="bg-sidebar-border" />
 
@@ -448,7 +447,7 @@ export function OnboardingDetailSheet({
                 </div>
               )}
 
-              <ul className="grid grid-cols-1 gap-x-5 gap-y-2.5 rounded-xl border bg-muted/30 p-4 text-sm sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-x-5 gap-y-2.5 rounded-xl border border-sidebar-border bg-black/20 p-4 text-sm sm:grid-cols-2">
                 {FORM_CHECKLIST_ITEMS.map((item) => {
                   const checked = props ? isFormChecked(props[item.key]) : false;
                   const link = item.linkKey ? props?.[item.linkKey] : null;
@@ -459,7 +458,7 @@ export function OnboardingDetailSheet({
                       ) : (
                         <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
                       )}
-                      <span className={checked ? "" : "text-sidebar-foreground/60"}>{item.label}</span>
+                      <span className={checked ? "text-sidebar-foreground" : "text-sidebar-foreground/80"}>{item.label}</span>
                       {checked && link && (
                         <a
                           href={link}
