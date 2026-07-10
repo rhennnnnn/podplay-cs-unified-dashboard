@@ -38,6 +38,7 @@ interface FormState {
   opening_date: string;
   presale_date: string;
   delivery_date: string;
+  qc_date: string;
   tracker: string[];
   status: LocationStatus;
   notes: string;
@@ -64,6 +65,7 @@ function toFormState(location?: Location): FormState {
     opening_date: location?.opening_date ?? "",
     presale_date: location?.presale_date ?? "",
     delivery_date: location?.delivery_date ?? "",
+    qc_date: location?.qc_date ?? "",
     tracker: parseTracker(location?.tracker ?? null),
     status: location?.status ?? "on-track",
     notes: location?.notes ?? "",
@@ -105,8 +107,11 @@ export function ClientFormDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.opening_date) {
-      toast.error("Location name and opening date are required.");
+    // Required to save: Client Name, Location, Tier, and at least one Tracking
+    // entry. All dates (opening/presale/delivery) are optional — gaps surface as
+    // a red "missing" nudge in the table/detail sheet, not a hard block.
+    if (!form.client_name.trim() || !form.name.trim() || !form.tier.trim() || form.tracker.length === 0) {
+      toast.error("Client Name, Location, Tier, and at least one Tracking name are required.");
       return;
     }
 
@@ -121,9 +126,10 @@ export function ClientFormDialog({
         client_name: form.client_name || null,
         name: form.name,
         tier: form.tier || null,
-        opening_date: form.opening_date,
+        opening_date: form.opening_date || null,
         presale_date: form.presale_date || null,
         delivery_date: form.delivery_date || null,
+        qc_date: form.qc_date || null,
         tracker: joinTracker(form.tracker),
         status: form.status,
         notes: form.notes || null,
@@ -176,15 +182,16 @@ export function ClientFormDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="client_name">Client Name</Label>
+              <Label htmlFor="client_name">Client Name *</Label>
               <Input
                 id="client_name"
+                required
                 value={form.client_name}
                 onChange={(e) => update("client_name", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="name">Location</Label>
+              <Label htmlFor="name">Location *</Label>
               <Input
                 id="name"
                 required
@@ -196,7 +203,7 @@ export function ClientFormDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="tier">Tier</Label>
+              <Label htmlFor="tier">Tier *</Label>
               <Select value={form.tier} onValueChange={(v) => update("tier", v)}>
                 <SelectTrigger id="tier">
                   <SelectValue placeholder="Select tier..." />
@@ -215,7 +222,6 @@ export function ClientFormDialog({
               <Input
                 id="opening_date"
                 type="date"
-                required
                 value={form.opening_date}
                 onChange={(e) => update("opening_date", e.target.value)}
               />
@@ -233,18 +239,32 @@ export function ClientFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="delivery_date">Delivery Date</Label>
+              <Label htmlFor="delivery_date">Hardware Delivery Date (manual)</Label>
               <Input
                 id="delivery_date"
                 type="date"
                 value={form.delivery_date}
                 onChange={(e) => update("delivery_date", e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">Fallback shown only when no MRP match.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="qc_date">QC Date (manual)</Label>
+              <Input
+                id="qc_date"
+                type="date"
+                value={form.qc_date}
+                onChange={(e) => update("qc_date", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Overrides the recommended QC date.</p>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Tracking</Label>
+            <Label>Tracking *</Label>
             <TrackingMultiSelect
               selected={form.tracker}
               roster={trackerRoster}

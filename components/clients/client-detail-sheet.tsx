@@ -6,7 +6,10 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatDate, isFollowUpOverdue, openReadinessChecklist } from "@/lib/client-hub";
-import { getOpeningDateTier, OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
+import { OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
+import { boxDeliveredTier, boxShippedTier, getBoxCells, isNa, parseFlexDate } from "@/lib/tracker-mrp";
+import { computeRowFlags } from "@/lib/tracker-flags";
+import type { MrpRecord } from "@/lib/mrp";
 import type { ActivityLogEntry, Location, Readiness } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +22,7 @@ interface ClientDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   location: Location | null;
+  mrpRecord: MrpRecord | null;
   userEmail: string;
   rosterMap: Record<string, string>;
   onEdit: (location: Location) => void;
@@ -34,10 +38,25 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function MissingValue() {
+  return (
+    <span className={`inline-flex items-center gap-1 ${OPENING_TIER_TEXT_CLASS.overdue}`}>
+      <AlertTriangle className="h-3 w-3" />—
+    </span>
+  );
+}
+
+function formatFlex(value: string | null): string {
+  const d = parseFlexDate(value);
+  if (!d) return value ?? "—";
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
 export function ClientDetailSheet({
   open,
   onOpenChange,
   location,
+  mrpRecord,
   userEmail,
   rosterMap,
   onEdit,
@@ -134,7 +153,12 @@ export function ClientDetailSheet({
   if (!location) return null;
 
   const overdue = isFollowUpOverdue(location);
-  const openingTier = getOpeningDateTier(location.opening_date, location.status === "opened");
+  const completed = location.status === "opened";
+  const flags = computeRowFlags(location, mrpRecord);
+  const openingTier = flags.openingTier;
+  const hardware = flags.hardware;
+  const qcConf = flags.qc;
+  const boxCells = getBoxCells(mrpRecord).filter((b) => b.applicable);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -163,19 +187,78 @@ export function ClientDetailSheet({
           <Separator className="bg-sidebar-border" />
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Tier" value={location.tier} /> 
-            <Field label="Pre-sale Date" value={location.presale_date ? formatDate(location.presale_date) : null} />
-            <Field label="Delivery Date" value={location.delivery_date ? formatDate(location.delivery_date) : null} />
+            <Field label="Tier" value={location.tier} />
+            <Field
+              label="Pre-sale Date"
+              value={location.presale_date ? formatDate(location.presale_date) : completed ? null : <MissingValue />}
+            />
+            <Field
+              label="Hardware Delivery Date"
+              value={
+                hardware.value ? (
+                  <>
+                    {formatFlex(hardware.value)}
+                    {hardware.source === "manual" && (
+                      <span className="ml-1 text-xs text-sidebar-foreground/50">(manual)</span>
+                    )}
+                  </>
+                ) : completed || !flags.hardwareRequired ? null : (
+                  <MissingValue />
+                )
+              }
+            />
             <Field
               label="Opening Date"
               value={
-                <span className={openingTier ? OPENING_TIER_TEXT_CLASS[openingTier] : ""}>
-                  {formatDate(location.opening_date)}
-                  {openingTier === "overdue" && " (overdue)"}
-                </span>
+                location.opening_date ? (
+                  <span className={openingTier ? OPENING_TIER_TEXT_CLASS[openingTier] : ""}>
+                    {formatDate(location.opening_date)}
+                    {openingTier === "overdue" && " (overdue)"}
+                  </span>
+                ) : completed ? null : (
+                  <MissingValue />
+                )
               }
             />
-            <Field label="Tracking" value={location.tracker} />
+            <Field
+              label="QC Date"
+              value={
+                flags.recommendedQcDate || flags.manualQcDate ? (
+                  <span className="space-y-0.5">
+                    {flags.recommendedQcDate && (
+                      <span
+                        className={`block ${flags.qcSource === "recommended" && qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""}`}
+                        title={flags.qcSource === "recommended" ? qcConf?.message : undefined}
+                      >
+                        <span className="text-xs text-sidebar-foreground/50">Recommended: </span>
+                        {flags.recommendedQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                    {flags.manualQcDate && (
+                      <span
+                        className={`block ${flags.qcSource === "manual" && qcConf ? OPENING_TIER_TEXT_CLASS[qcConf.tier] : ""}`}
+                        title={flags.qcSource === "manual" ? qcConf?.message : undefined}
+                      >
+                        <span className="text-xs text-sidebar-foreground/50">Manual: </span>
+                        {flags.manualQcDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                  </span>
+                ) : null
+              }
+            />
+            <Field
+              label="Tracking"
+              value={
+                flags.noTracking ? (
+                  <span className={`inline-flex items-center gap-1 ${OPENING_TIER_TEXT_CLASS.overdue}`}>
+                    <AlertTriangle className="h-3 w-3" />None
+                  </span>
+                ) : (
+                  location.tracker
+                )
+              }
+            />
             {location.status === "opened" && (
               <>
                 <Field label="Opened Date" value={formatDate(location.opened_date)} />
@@ -183,6 +266,33 @@ export function ClientDetailSheet({
               </>
             )}
           </div>
+
+          {mrpRecord && boxCells.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/70">
+                PP Hardware Boxes
+              </p>
+              <div className="space-y-1.5 text-sm">
+                {boxCells.map((b) => {
+                  const shipTier = boxShippedTier(mrpRecord, b.index);
+                  const delTier = boxDeliveredTier(mrpRecord, b.index);
+                  return (
+                    <div key={b.index} className="flex items-center justify-between gap-3">
+                      <span className="text-sidebar-foreground/70">Box {b.index}</span>
+                      <span className="flex gap-3">
+                        <span className={shipTier ? OPENING_TIER_TEXT_CLASS[shipTier] : "text-sidebar-foreground"}>
+                          Shipped: {isNa(b.shipped) ? "—" : formatFlex(b.shipped)}
+                        </span>
+                        <span className={delTier ? OPENING_TIER_TEXT_CLASS[delTier] : "text-sidebar-foreground"}>
+                          Delivered: {isNa(b.delivered) ? "—" : formatFlex(b.delivered)}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <Button
