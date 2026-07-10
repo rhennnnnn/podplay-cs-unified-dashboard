@@ -5,7 +5,7 @@ export interface Location {
   client_name: string | null;
   name: string;
   tier: string | null;
-  opening_date: string;
+  opening_date: string | null;
   presale_date: string | null;
   delivery_date: string | null;
   tracker: string | null;
@@ -119,7 +119,7 @@ export interface Database {
     Tables: {
       locations: {
         Row: Location;
-        Insert: Partial<Location> & { id: string; name: string; opening_date: string };
+        Insert: Partial<Location> & { id: string; name: string };
         Update: Partial<Location>;
         Relationships: [];
       };

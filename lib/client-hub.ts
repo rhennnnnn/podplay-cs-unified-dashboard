@@ -15,7 +15,7 @@ export const STATUS_BADGE_VARIANT: Record<LocationStatus, "default" | "amber" | 
 };
 
 export function isFollowUpOverdue(location: Location): boolean {
-  if (location.status === "opened") return false;
+  if (location.status === "opened" || !location.opening_date) return false;
   const opening = new Date(location.opening_date);
   const today = new Date();
   opening.setHours(0, 0, 0, 0);
@@ -25,7 +25,7 @@ export function isFollowUpOverdue(location: Location): boolean {
 }
 
 export function isOpeningThisWeek(location: Location): boolean {
-  if (location.status === "opened") return false;
+  if (location.status === "opened" || !location.opening_date) return false;
   const opening = new Date(location.opening_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
