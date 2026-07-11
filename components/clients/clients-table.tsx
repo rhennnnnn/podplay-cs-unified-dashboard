@@ -703,7 +703,7 @@ export function ClientsTable({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col gap-6">
       <div className="flex items-center justify-end gap-2">
         <Button
           className="gap-2"
@@ -822,8 +822,8 @@ export function ClientsTable({
         </div>
       )}
 
-      <Card>
-        <div className="overflow-auto [&>div]:overflow-visible" style={{ maxHeight: "calc(100vh - 13rem)" }}>
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-auto [&>div]:overflow-visible">
           <Table>
             <TableHeader className="sticky top-0 z-10 [&_th]:bg-background">
               {table.getHeaderGroups().map((headerGroup) => (
