@@ -10,7 +10,7 @@
 // process-local copy backs cold reads before the first snapshot exists.
 
 import { getIntegrationSettings, markRefreshed, shouldAllowPoll, type PollTrigger } from "@/lib/api-health";
-import { getHardwareRecords, matchByCompanyName, type MrpRecord } from "@/lib/mrp";
+import { getHardwareRecords, matchByCompanyNames, type MrpRecord } from "@/lib/mrp";
 import { readSnapshot, writeSnapshot } from "@/lib/snapshot";
 
 export interface SyncOutcome {
@@ -64,11 +64,16 @@ export async function refreshMrpRecords(trigger: PollTrigger = "manual"): Promis
 }
 
 // Detail-sheet lookup — prefers the DB snapshot (instant, shared), falls back
-// to the process-local copy before the first snapshot exists.
-export async function getMrpRecordForCompany(companyName: string): Promise<MrpRecord | null> {
+// to the process-local copy before the first snapshot exists. Accepts one or
+// more candidate names (the specific onboarding name AND its parent company),
+// so a less-specific parent that maps to several sheet rows doesn't shadow an
+// exact match on the specific name.
+export async function getMrpRecordForCompany(
+  companyName: string | string[]
+): Promise<MrpRecord | null> {
   const snap = await readSnapshot<MrpRecord[]>("mrp:records");
   const records = snap?.data ?? (await getMrpRecords("auto"));
-  return matchByCompanyName(companyName, records);
+  return matchByCompanyNames(companyName, records);
 }
 
 // Manual Refresh button's MRP half (HubSpot half is handled by the deals route
