@@ -157,6 +157,29 @@ export function ClientFormDialog({
       };
       await supabase.from("activity_log").insert(activityPayload as never);
 
+      // Session 15D Part C — record this CSA edit in the last-write-wins ledger
+      // so a later cron sync can't revert it with a stale HubSpot/MRP value.
+      // Service-role write only, so it goes through a server route (the ledger
+      // isn't client-writable). Best-effort: a hiccup here must not fail the save.
+      try {
+        await fetch("/api/tracker/field-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locationId: id,
+            fields: {
+              opening_date: payload.opening_date ?? null,
+              presale_date: payload.presale_date ?? null,
+              delivery_date: payload.delivery_date ?? null,
+              qc_date: payload.qc_date ?? null,
+              tier: payload.tier ?? null,
+            },
+          }),
+        });
+      } catch {
+        // ledger is a best-effort audit aid — never block the user's save on it
+      }
+
       toast.success(isEdit ? "Client updated." : "Client added.");
       onSaved();
       onOpenChange(false);

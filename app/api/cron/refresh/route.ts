@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildPipelineDeals } from "@/lib/onboarding-deals";
 import { refreshMrpRecords } from "@/lib/onboarding-sync";
 import { runTrackerImportSync } from "@/lib/tracker-sync";
+import { runFieldSync } from "@/lib/tracker-field-sync";
 import { writeSnapshot } from "@/lib/snapshot";
 import { fetchOwnersLive, type PipelineKey } from "@/lib/hubspot";
 
@@ -52,7 +53,18 @@ async function runRefresh() {
     out.trackerSync = "error";
   }
 
-  return { refreshed: true, ...out, trackerSync, at: new Date().toISOString() };
+  // Field-level last-write-wins sync (Session 15D). Runs after import/backfill,
+  // over the same fresh snapshots, gated by the same auto-import pause. A newer
+  // HubSpot/MRP value flows through; an older one never reverts a tracker edit.
+  let fieldSync: unknown = "error";
+  try {
+    fieldSync = await runFieldSync("system@cron");
+    out.fieldSync = "ok";
+  } catch {
+    out.fieldSync = "error";
+  }
+
+  return { refreshed: true, ...out, trackerSync, fieldSync, at: new Date().toISOString() };
 }
 
 function authorized(req: NextRequest): boolean {
