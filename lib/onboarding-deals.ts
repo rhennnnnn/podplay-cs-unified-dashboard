@@ -17,7 +17,13 @@ import {
   type PipelineKey,
 } from "@/lib/hubspot";
 import type { PollTrigger } from "@/lib/api-health";
+import { readSnapshot, writeSnapshot, type SnapshotKey } from "@/lib/snapshot";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
+
+export const PIPELINE_SNAPSHOT_KEY: Record<PipelineKey, SnapshotKey> = {
+  basic: "onboarding:basic",
+  pro: "onboarding:pro",
+};
 
 const LIST_PROPERTIES = [
   "hs_name",
@@ -143,6 +149,32 @@ export async function buildPipelineDeals(
   });
 
   return { deals, total };
+}
+
+// Manual-refresh rebuild for ONE pipeline: reads the prior snapshot to reuse
+// its per-card last-email values (skipping the expensive email sweep so the
+// rebuild stays well under the serverless timeout — the hourly cron does the
+// full sweep), rebuilds live, writes the snapshot back, and returns the fresh
+// data with its write timestamp.
+//
+// Called directly (no server-to-server loopback fetch) by both the deals read
+// route's manual path and the onboarding-sync manual Refresh route. The old
+// loopback fetch — a route handler fetching its own /api/hubspot/deals with
+// hand-forwarded cookies — was fragile on Vercel (cookie auth across the
+// in-function round-trip, extra latency pushing Pro/Auto's larger pipeline
+// toward the timeout) and is the confirmed cause of Manual Refresh silently
+// no-opping on Pro/Auto(+). A direct call removes that failure mode entirely.
+export async function refreshPipelineSnapshot(
+  pipeline: PipelineKey
+): Promise<PipelineDeals & { fetchedAt: string }> {
+  const snap = await readSnapshot<PipelineDeals>(PIPELINE_SNAPSHOT_KEY[pipeline]);
+  const priorLastEmails = snap
+    ? Object.fromEntries(snap.data.deals.map((d) => [d.id, d.lastEmail]))
+    : undefined;
+  const built = await buildPipelineDeals(pipeline, "manual", { priorLastEmails });
+  const fetchedAt = new Date().toISOString();
+  await writeSnapshot(PIPELINE_SNAPSHOT_KEY[pipeline], built).catch(() => {});
+  return { ...built, fetchedAt };
 }
 
 // In-memory filtering the read route applies over a pipeline snapshot.

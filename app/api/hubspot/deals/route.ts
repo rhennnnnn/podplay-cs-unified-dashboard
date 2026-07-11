@@ -2,16 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { type PipelineKey } from "@/lib/hubspot";
 import { getIntegrationSettings, IntegrationPausedError, shouldAllowPoll } from "@/lib/api-health";
-import { buildPipelineDeals, filterDeals } from "@/lib/onboarding-deals";
-import { readSnapshot, writeSnapshot, type SnapshotKey } from "@/lib/snapshot";
+import { filterDeals, PIPELINE_SNAPSHOT_KEY, refreshPipelineSnapshot } from "@/lib/onboarding-deals";
+import { readSnapshot } from "@/lib/snapshot";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 export const dynamic = "force-dynamic";
-
-const SNAPSHOT_KEY: Record<PipelineKey, SnapshotKey> = {
-  basic: "onboarding:basic",
-  pro: "onboarding:pro",
-};
 
 // Serves the pre-fetched DB snapshot (written by the cron refresh every 60 min)
 // so the board renders instantly, with stage/owner/search filtering applied
@@ -23,23 +18,18 @@ async function loadPipeline(
   pipeline: PipelineKey,
   manual: boolean
 ): Promise<{ deals: OnboardingListItem[]; total: number; fetchedAt: string }> {
-  const snap = await readSnapshot<{ deals: OnboardingListItem[]; total: number }>(SNAPSHOT_KEY[pipeline]);
+  const snap = await readSnapshot<{ deals: OnboardingListItem[]; total: number }>(
+    PIPELINE_SNAPSHOT_KEY[pipeline]
+  );
   if (!manual && snap) {
     return { deals: snap.data.deals, total: snap.data.total, fetchedAt: snap.fetchedAt };
   }
   // Cold snapshot or manual refresh — build live and persist so the next read
-  // (and every other session) is instant. On manual, reuse the existing
-  // snapshot's last-email values instead of re-sweeping them per card, so the
-  // rebuild finishes under the serverless timeout (the hourly cron does the
-  // full email sweep).
-  const priorLastEmails =
-    manual && snap
-      ? Object.fromEntries(snap.data.deals.map((d) => [d.id, d.lastEmail]))
-      : undefined;
-  const built = await buildPipelineDeals(pipeline, manual ? "manual" : "auto", { priorLastEmails });
-  const fetchedAt = new Date().toISOString();
-  await writeSnapshot(SNAPSHOT_KEY[pipeline], built).catch(() => {});
-  return { deals: built.deals, total: built.total, fetchedAt };
+  // (and every other session) is instant. refreshPipelineSnapshot reuses the
+  // prior snapshot's last-email values (manual path) so it stays under the
+  // serverless timeout; the hourly cron does the full email sweep.
+  const built = await refreshPipelineSnapshot(pipeline);
+  return { deals: built.deals, total: built.total, fetchedAt: built.fetchedAt };
 }
 
 export async function GET(req: NextRequest) {
