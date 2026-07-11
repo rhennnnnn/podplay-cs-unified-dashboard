@@ -22,6 +22,7 @@ import { shouldAllowPoll } from "@/lib/api-health";
 import { matchNames, type MrpRecord } from "@/lib/mrp";
 import { parseFlexDate, isNa } from "@/lib/tracker-mrp";
 import { mapOnboardingToLocation, deriveImportStatus } from "@/lib/track-opening-map";
+import type { HubspotOwner } from "@/lib/hubspot";
 import type { Location } from "@/lib/types";
 import type { PipelineDeals } from "@/lib/onboarding-deals";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
@@ -33,6 +34,7 @@ const MAX_IMPORTS_PER_TICK = 25;
 export interface TrackerSyncResult {
   importScanned: number;
   imported: number;
+  trackerFilled: number; // existing linked rows whose blank tracker was set from the owner
   importCapped: boolean;
   importSkippedPaused: boolean;
   backfillScanned: number;
@@ -64,6 +66,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
   const result: TrackerSyncResult = {
     importScanned: 0,
     imported: 0,
+    trackerFilled: 0,
     importCapped: false,
     importSkippedPaused: false,
     backfillScanned: 0,
@@ -71,9 +74,27 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
     backfillSkippedPaused: false,
   };
 
-  const { data: locData, error } = await admin.from("locations").select("*");
+  const [{ data: locData, error }, { data: profData }] = await Promise.all([
+    admin.from("locations").select("*"),
+    admin.from("profiles").select("email, first_name"),
+  ]);
   if (error) throw new Error(error.message);
   let locations = (locData ?? []) as unknown as Location[];
+
+  // Team roster: HubSpot owner -> tracker name. The tracker only ever holds
+  // people who exist on the team (profiles), so an onboarding owned by someone
+  // not on the team imports with a BLANK tracker (per user, Session 15B follow-up).
+  const profiles = (profData ?? []) as unknown as { email: string; first_name: string }[];
+  const emailToName = new Map(profiles.map((p) => [p.email.toLowerCase(), p.first_name]));
+  const ownersSnap = await readSnapshot<HubspotOwner[]>("hubspot:owners");
+  const ownerById = new Map((ownersSnap?.data ?? []).map((o) => [o.id, o]));
+  function trackerForDeal(deal: OnboardingListItem): string | null {
+    const ownerId = deal.properties.hubspot_owner_id;
+    if (!ownerId) return null;
+    const owner = ownerById.get(ownerId);
+    if (!owner?.email) return null;
+    return emailToName.get(owner.email.toLowerCase()) ?? null; // not on team -> blank
+  }
 
   // ---- PART A: HubSpot -> tracker auto-import -------------------------------
   const allowHubspot = await shouldAllowPoll("hubspot", "auto");
@@ -83,26 +104,43 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
     const deals = await readOnboardingDeals();
     result.importScanned = deals.length;
 
-    const linkedIds = new Set(
-      locations.map((l) => l.hubspot_deal_id).filter((id): id is string => Boolean(id))
-    );
-
     const inserted: Location[] = [];
     for (const deal of deals) {
-      if (result.imported >= MAX_IMPORTS_PER_TICK) {
+      // Combined write budget (inserts + tracker fills) so a large first-run
+      // backlog can't blow the Vercel Hobby 10s cap. Remainder drains next tick.
+      if (result.imported + result.trackerFilled >= MAX_IMPORTS_PER_TICK) {
         result.importCapped = true;
         break;
       }
-      // ID match first — the durable link (15A) is authoritative.
-      if (linkedIds.has(deal.id)) continue;
-      // Name-match fallback: an existing row 15A didn't link yet still counts as
-      // "already in the tracker" — do NOT create a duplicate.
-      const existing = matchNames(
-        deal.properties.hs_name ?? "",
-        locations,
-        (l) => l.name
-      );
-      if (existing) continue;
+
+      const trackerName = trackerForDeal(deal);
+
+      // ID match first (15A's durable link is authoritative), then name-match.
+      const existing =
+        (deal.id ? locations.find((l) => l.hubspot_deal_id === deal.id) : undefined) ??
+        matchNames(deal.properties.hs_name ?? "", locations, (l) => l.name);
+
+      if (existing) {
+        // Row already tracked — only backfill a BLANK tracker from the owner.
+        if (trackerName && !existing.tracker) {
+          const { error: e } = await admin
+            .from("locations")
+            .update({ tracker: trackerName } as never)
+            .eq("id", existing.id);
+          if (!e) {
+            existing.tracker = trackerName;
+            result.trackerFilled++;
+            await admin.from("activity_log").insert({
+              user_email: actorEmail,
+              action: "updated",
+              entity: existing.name,
+              details: `Set tracking from HubSpot owner: ${trackerName}`,
+            } as never);
+          }
+        }
+        continue;
+      }
+
       if (!(deal.properties.hs_name ?? "").trim()) continue; // no name -> can't map
 
       const m = mapOnboardingToLocation(deal);
@@ -116,7 +154,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
         // Completed onboardings land on the Opened tab; give them an opened_date
         // so they don't render as opened-with-no-date.
         opened_date: status === "opened" ? m.opening_date : null,
-        tracker: null,
+        tracker: trackerName,
         status,
         notes: null,
         hubspot_deal_id: deal.id,
@@ -138,7 +176,6 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
         details: `Auto-imported from HubSpot (deal ${deal.id})`,
       } as never);
 
-      linkedIds.add(deal.id);
       inserted.push({ ...(payload as unknown as Location) });
       result.imported++;
     }

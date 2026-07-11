@@ -237,6 +237,7 @@ export function ClientsTable({
   const [clientFilter, setClientFilter] = React.useState<string>("all");
   const [locationFilter, setLocationFilter] = React.useState<string>("all");
   const [tierFilter, setTierFilter] = React.useState<string>("all");
+  const [trackerFilter, setTrackerFilter] = React.useState<string>("all");
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "date", desc: false }]);
 
   const [selected, setSelected] = React.useState<Location | null>(null);
@@ -320,6 +321,20 @@ export function ClientsTable({
     [tabRows]
   );
 
+  // Distinct tracker names present in the current tab (tracker is a " | "-joined
+  // list, so split before de-duping).
+  const trackerNames = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const l of tabRows) {
+      (l.tracker ?? "")
+        .split("|")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((n) => set.add(n));
+    }
+    return Array.from(set).sort();
+  }, [tabRows]);
+
   const trackerRoster = loginRoster;
 
   const locationOptions = React.useMemo(() => {
@@ -377,6 +392,10 @@ export function ClientsTable({
       if (clientFilter !== "all" && l.client_name !== clientFilter) return false;
       if (locationFilter !== "all" && l.name !== locationFilter) return false;
       if (tierFilter !== "all" && l.tier !== tierFilter) return false;
+      if (trackerFilter !== "all") {
+        const names = (l.tracker ?? "").split("|").map((s) => s.trim());
+        if (!names.includes(trackerFilter)) return false;
+      }
       if (statFilter && statFilter !== "total-active" && statFilter !== "total-opened" && !statMatches(statFilter, l))
         return false;
       if (search) {
@@ -386,7 +405,7 @@ export function ClientsTable({
       }
       return true;
     });
-  }, [tabRows, clientFilter, locationFilter, tierFilter, statFilter, statMatches, search]);
+  }, [tabRows, clientFilter, locationFilter, tierFilter, trackerFilter, statFilter, statMatches, search]);
 
   const stats = React.useMemo(() => computeClientStats(locations), [locations]);
 
@@ -778,6 +797,19 @@ export function ClientsTable({
               ))}
             </SelectContent>
           </Select>
+          <Select value={trackerFilter} onValueChange={setTrackerFilter}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue placeholder="All tracking" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All tracking</SelectItem>
+              {trackerNames.map((n) => (
+                <SelectItem key={n} value={n}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 
@@ -791,9 +823,9 @@ export function ClientsTable({
       )}
 
       <Card>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto [&>div]:overflow-visible" style={{ maxHeight: "calc(100vh - 13rem)" }}>
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 [&_th]:bg-background">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
