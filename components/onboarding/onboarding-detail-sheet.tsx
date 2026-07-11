@@ -56,6 +56,9 @@ interface OnboardingDetailSheetProps {
   ownerMap: Map<string, HubspotOwner>;
   isTracked: boolean;
   onTrackOpening: (deal: OnboardingListItem) => void;
+  autoImportEnabled: boolean;
+  onImportNow: (deal: OnboardingListItem) => void;
+  isImporting: boolean;
 }
 
 export function OnboardingDetailSheet({
@@ -66,6 +69,9 @@ export function OnboardingDetailSheet({
   ownerMap,
   isTracked,
   onTrackOpening,
+  autoImportEnabled,
+  onImportNow,
+  isImporting,
 }: OnboardingDetailSheetProps) {
   const { data, isLoading } = useSWR<DealDetailResponse>(dealId ? `/api/hubspot/deals/${dealId}` : null, fetcher);
   const { data: activityData } = useSWR<ActivityResponse>(dealId ? `/api/hubspot/activity/${dealId}` : null, fetcher);
@@ -222,7 +228,26 @@ export function OnboardingDetailSheet({
                     </a>
                   )}
                 </div>
+              ) : autoImportEnabled ? (
+                // Auto-import ON: no manual dialog — this record is picked up by
+                // the next hourly sync. "Import Now" runs that same import for
+                // just this record immediately.
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">Auto-Import Enabled</Badge>
+                    <span className="text-xs text-muted-foreground">Added automatically on the next sync.</span>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => listItem && onImportNow(listItem)}
+                    disabled={!listItem || isImporting}
+                  >
+                    {isImporting ? "Importing…" : "Import Now"}
+                  </Button>
+                </div>
               ) : (
+                // Auto-import PAUSED: fall back to the manual Track Opening flow
+                // exactly as before.
                 <Button
                   className="mt-3 w-full"
                   onClick={() => listItem && onTrackOpening(listItem)}
