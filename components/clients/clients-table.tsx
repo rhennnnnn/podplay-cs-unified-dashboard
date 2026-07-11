@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ClipboardList,
   ExternalLink,
+  Filter,
   MoreHorizontal,
   PackageCheck,
   PackageX,
@@ -42,6 +43,8 @@ import {
   isOpenedThisMonth,
   isOpeningThisWeek,
   openReadinessChecklist,
+  STATUS_BADGE_VARIANT,
+  STATUS_LABEL,
 } from "@/lib/client-hub";
 import { OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
 import {
@@ -61,13 +64,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -234,9 +238,13 @@ export function ClientsTable({
   const [expandShipped, setExpandShipped] = React.useState(false);
   const [expandDelivered, setExpandDelivered] = React.useState(false);
   const [search, setSearch] = React.useState("");
-  const [clientFilter, setClientFilter] = React.useState<string>("all");
-  const [locationFilter, setLocationFilter] = React.useState<string>("all");
-  const [tierFilter, setTierFilter] = React.useState<string>("all");
+  // Generic multi-select facet filters. Each holds the selected values for that
+  // facet; empty = no constraint. OR within a facet, AND across facets.
+  const [clientSel, setClientSel] = React.useState<string[]>([]);
+  const [locationSel, setLocationSel] = React.useState<string[]>([]);
+  const [tierSel, setTierSel] = React.useState<string[]>([]);
+  const [trackerSel, setTrackerSel] = React.useState<string[]>([]);
+  const [statusSel, setStatusSel] = React.useState<string[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "date", desc: false }]);
 
   const [selected, setSelected] = React.useState<Location | null>(null);
@@ -320,16 +328,59 @@ export function ClientsTable({
     [tabRows]
   );
 
+  // Distinct tracker names present in the current tab (tracker is a " | "-joined
+  // list, so split before de-duping).
+  const trackerNames = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const l of tabRows) {
+      (l.tracker ?? "")
+        .split("|")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((n) => set.add(n));
+    }
+    return Array.from(set).sort();
+  }, [tabRows]);
+
+  const statuses = React.useMemo(
+    () => Array.from(new Set(tabRows.map((l) => l.status))) as string[],
+    [tabRows]
+  );
+
   const trackerRoster = loginRoster;
 
+  // Location options cascade off the selected clients (all locations when no
+  // client is selected).
   const locationOptions = React.useMemo(() => {
-    const scoped = clientFilter === "all" ? tabRows : tabRows.filter((l) => l.client_name === clientFilter);
+    const scoped = clientSel.length === 0 ? tabRows : tabRows.filter((l) => clientSel.includes(l.client_name ?? ""));
     return Array.from(new Set(scoped.map((l) => l.name)));
-  }, [tabRows, clientFilter]);
+  }, [tabRows, clientSel]);
 
-  function handleClientFilterChange(value: string) {
-    setClientFilter(value);
-    setLocationFilter("all");
+  const activeFilterCount =
+    clientSel.length + locationSel.length + tierSel.length + trackerSel.length + statusSel.length;
+
+  function toggle(setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) {
+    setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
+
+  function clearFilters() {
+    setClientSel([]);
+    setLocationSel([]);
+    setTierSel([]);
+    setTrackerSel([]);
+    setStatusSel([]);
+  }
+
+  // Which filter sections are expanded in the dropdown. Collapsed by default so
+  // the menu stays short; selections persist regardless of collapse state.
+  const [openSections, setOpenSections] = React.useState<Set<string>>(new Set());
+  function toggleSection(label: string) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
   }
 
   // Predicate for each filterable stat card.
@@ -374,9 +425,14 @@ export function ClientsTable({
 
   const filtered = React.useMemo(() => {
     return tabRows.filter((l) => {
-      if (clientFilter !== "all" && l.client_name !== clientFilter) return false;
-      if (locationFilter !== "all" && l.name !== locationFilter) return false;
-      if (tierFilter !== "all" && l.tier !== tierFilter) return false;
+      if (clientSel.length && !clientSel.includes(l.client_name ?? "")) return false;
+      if (locationSel.length && !locationSel.includes(l.name)) return false;
+      if (tierSel.length && !tierSel.includes(l.tier ?? "")) return false;
+      if (trackerSel.length) {
+        const names = (l.tracker ?? "").split("|").map((s) => s.trim());
+        if (!trackerSel.some((t) => names.includes(t))) return false;
+      }
+      if (statusSel.length && !statusSel.includes(l.status)) return false;
       if (statFilter && statFilter !== "total-active" && statFilter !== "total-opened" && !statMatches(statFilter, l))
         return false;
       if (search) {
@@ -386,7 +442,7 @@ export function ClientsTable({
       }
       return true;
     });
-  }, [tabRows, clientFilter, locationFilter, tierFilter, statFilter, statMatches, search]);
+  }, [tabRows, clientSel, locationSel, tierSel, trackerSel, statusSel, statFilter, statMatches, search]);
 
   const stats = React.useMemo(() => computeClientStats(locations), [locations]);
 
@@ -398,6 +454,7 @@ export function ClientsTable({
   function handleTabChange(next: Tab) {
     setTab(next);
     setStatFilter(null); // filters are tab-scoped; clear on switch
+    clearFilters();
   }
 
   function handleStatCard(key: StatKey) {
@@ -684,7 +741,7 @@ export function ClientsTable({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6 [@media(min-height:768px)]:h-full [@media(min-height:768px)]:min-h-0">
       <div className="flex items-center justify-end gap-2">
         <Button
           className="gap-2"
@@ -700,11 +757,11 @@ export function ClientsTable({
 
       {tab === "active" ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Total Active" value={stats.totalActive} icon={ClipboardList} active={statFilter === null} onClick={() => handleStatCard("total-active")} />
-            <StatCard label="At Risk" value={count("at-risk")} icon={AlertTriangle} active={statFilter === "at-risk"} onClick={() => handleStatCard("at-risk")} />
-            <StatCard label="Opening This Week" value={count("opening-week")} icon={CalendarClock} active={statFilter === "opening-week"} onClick={() => handleStatCard("opening-week")} />
-            <StatCard label="Follow-ups Overdue" value={count("followups")} icon={AlertTriangle} active={statFilter === "followups"} onClick={() => handleStatCard("followups")} />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatCard compact label="Total Active" value={stats.totalActive} icon={ClipboardList} active={statFilter === null} onClick={() => handleStatCard("total-active")} />
+            <StatCard compact label="At Risk" value={count("at-risk")} icon={AlertTriangle} active={statFilter === "at-risk"} onClick={() => handleStatCard("at-risk")} />
+            <StatCard compact label="Opening This Week" value={count("opening-week")} icon={CalendarClock} active={statFilter === "opening-week"} onClick={() => handleStatCard("opening-week")} />
+            <StatCard compact label="Follow-ups Overdue" value={count("followups")} icon={AlertTriangle} active={statFilter === "followups"} onClick={() => handleStatCard("followups")} />
           </div>
 
           <div className="space-y-2">
@@ -720,9 +777,9 @@ export function ClientsTable({
           </div>
         </>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total Opened" value={openedRows.length} icon={CheckCircle2} active={statFilter === null} onClick={() => handleStatCard("total-opened")} />
-          <StatCard label="Opened This Month" value={count("opened-month")} icon={CheckCircle2} active={statFilter === "opened-month"} onClick={() => handleStatCard("opened-month")} />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <StatCard compact label="Total Opened" value={openedRows.length} icon={CheckCircle2} active={statFilter === null} onClick={() => handleStatCard("total-opened")} />
+          <StatCard compact label="Opened This Month" value={count("opened-month")} icon={CheckCircle2} active={statFilter === "opened-month"} onClick={() => handleStatCard("opened-month")} />
         </div>
       )}
 
@@ -734,50 +791,81 @@ export function ClientsTable({
       </Tabs>
 
       <Card>
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:flex-wrap">
-          <div className="relative flex-1 sm:min-w-[200px]">
+        <CardContent className="flex items-center gap-2 p-3">
+          <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search by client, location, or tracking..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
           </div>
-          <Select value={clientFilter} onValueChange={handleClientFilterChange}>
-            <SelectTrigger className="sm:w-44">
-              <SelectValue placeholder="All clients" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All clients</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={locationFilter} onValueChange={setLocationFilter}>
-            <SelectTrigger className="sm:w-44">
-              <SelectValue placeholder="All locations" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All locations</SelectItem>
-              {locationOptions.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {l}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={tierFilter} onValueChange={setTierFilter}>
-            <SelectTrigger className="sm:w-40">
-              <SelectValue placeholder="All tiers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All tiers</SelectItem>
-              {tiers.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Filter className="h-4 w-4" />
+                Filter
+                {activeFilterCount > 0 && (
+                  <Badge variant="default" className="ml-1 h-5 min-w-5 justify-center px-1">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[70vh] w-60 overflow-y-auto">
+              {(
+                [
+                  { label: "Client Name", opts: clients, sel: clientSel, setter: setClientSel },
+                  { label: "Location", opts: locationOptions, sel: locationSel, setter: setLocationSel },
+                  { label: "Tier", opts: tiers, sel: tierSel, setter: setTierSel },
+                  { label: "Tracking", opts: trackerNames, sel: trackerSel, setter: setTrackerSel },
+                  { label: "Status", opts: statuses, sel: statusSel, setter: setStatusSel },
+                ] as const
+              )
+                .filter((f) => f.opts.length > 0)
+                .map((f, i) => {
+                  const open = openSections.has(f.label);
+                  return (
+                    <React.Fragment key={f.label}>
+                      {i > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          toggleSection(f.label);
+                        }}
+                        className="flex items-center justify-between font-medium"
+                      >
+                        <span className="flex items-center gap-2">
+                          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          {f.label}
+                        </span>
+                        {f.sel.length > 0 && (
+                          <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1">
+                            {f.sel.length}
+                          </Badge>
+                        )}
+                      </DropdownMenuItem>
+                      {open &&
+                        f.opts.map((o) => (
+                          <DropdownMenuCheckboxItem
+                            key={o}
+                            checked={f.sel.includes(o)}
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={() => toggle(f.setter, o)}
+                            className="pl-8"
+                          >
+                            {o}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                    </React.Fragment>
+                  );
+                })}
+              {activeFilterCount > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); clearFilters(); }} className="justify-center text-muted-foreground">
+                    Clear all filters
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </CardContent>
       </Card>
 
@@ -790,10 +878,10 @@ export function ClientsTable({
         </div>
       )}
 
-      <Card>
-        <div className="overflow-x-auto">
+      <Card className="hidden flex-col md:flex [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
+        <div className="overflow-auto [&>div]:overflow-visible [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 [&_th]:bg-background">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
@@ -836,6 +924,79 @@ export function ClientsTable({
           </Table>
         </div>
       </Card>
+
+      {/* Mobile card list — the 15-column table is unusable on phones. */}
+      <div className="space-y-2 md:hidden">
+        {table.getRowModel().rows.length === 0 ? (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            {statFilter ? "No rows match this stat card." : "No clients match your filters."}
+          </Card>
+        ) : (
+          table.getRowModel().rows.map((row) => {
+            const l = row.original;
+            const f = flagsByLocation[l.id];
+            const attention = tab === "active" && !!f?.needsAttention;
+            const dateStr = tab === "opened" ? l.opened_date : l.opening_date;
+            const dateTier = tab === "opened" ? null : f?.openingTier ?? null;
+            const overdue = isFollowUpOverdue(l);
+            const pct = readinessByLocation[l.id]?.pct ?? 0;
+            return (
+              <Card
+                key={l.id}
+                onClick={() => {
+                  setSelected(l);
+                  setSheetOpen(true);
+                }}
+                className={cn(
+                  "cursor-pointer p-3",
+                  attention && "border-l-2 border-l-destructive/60 bg-destructive/[0.04]"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{l.client_name || "—"}</div>
+                    <div className="truncate text-sm text-muted-foreground">{l.name}</div>
+                  </div>
+                  <Badge variant={STATUS_BADGE_VARIANT[l.status]} className="shrink-0">
+                    {STATUS_LABEL[l.status]}
+                  </Badge>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+                  <div>
+                    <span className="text-xs text-muted-foreground">Tier</span>
+                    <div>{l.tier || "—"}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">{tab === "opened" ? "Opened" : "Opening"}</span>
+                    <div className={dateTier ? OPENING_TIER_TEXT_CLASS[dateTier] : ""}>
+                      {dateStr ? formatDate(dateStr) : tab === "active" ? <MissingMark /> : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Tracking</span>
+                    <div className={f?.noTracking ? OPENING_TIER_TEXT_CLASS.overdue : ""}>
+                      {f?.noTracking ? "None" : l.tracker}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Readiness</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={pct} className="h-1.5 flex-1" />
+                      <span className="text-xs text-muted-foreground">{pct}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-1">
+                  <FollowUpTag label="Pre" done={l.pre_open_done} overdue={overdue && !l.pre_open_done} />
+                  <FollowUpTag label="Post" done={l.post_open_done} overdue={overdue && !l.post_open_done} />
+                </div>
+              </Card>
+            );
+          })
+        )}
+      </div>
 
       <ClientDetailSheet
         open={sheetOpen}

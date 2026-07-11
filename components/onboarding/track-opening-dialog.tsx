@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
-import { tierToTrackerTier } from "@/lib/hubspot";
+import { mapOnboardingToLocation, slugify } from "@/lib/track-opening-map";
 import { joinTracker } from "@/lib/client-hub";
 import type { Location, LocationStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -24,21 +24,6 @@ import { TrackingMultiSelect } from "@/components/shared/tracking-multi-select";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
 const TIER_OPTIONS = ["Basic (+)", "Pro/Auto (+)"];
-
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "location"
-  );
-}
-
-function toIsoDate(value: string | null | undefined): string {
-  if (!value) return "";
-  return value.slice(0, 10);
-}
 
 interface TrackOpeningDialogProps {
   deal: OnboardingListItem | null;
@@ -72,10 +57,11 @@ export function TrackOpeningDialog({
 
   React.useEffect(() => {
     if (open && deal) {
-      setClientName(deal.company?.name ?? "");
-      setName(deal.properties.hs_name ?? "");
-      setTier(tierToTrackerTier(deal.properties.podplay_tier));
-      setOpeningDate(toIsoDate(deal.properties.grand_opening ?? deal.properties.anticipated_opening));
+      const m = mapOnboardingToLocation(deal);
+      setClientName(m.client_name ?? "");
+      setName(m.name);
+      setTier(m.tier);
+      setOpeningDate(m.opening_date ?? "");
       setPresaleDate("");
       setDeliveryDate("");
       setQcDate("");
