@@ -65,7 +65,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -368,6 +367,18 @@ export function ClientsTable({
     setTierSel([]);
     setTrackerSel([]);
     setStatusSel([]);
+  }
+
+  // Which filter sections are expanded in the dropdown. Collapsed by default so
+  // the menu stays short; selections persist regardless of collapse state.
+  const [openSections, setOpenSections] = React.useState<Set<string>>(new Set());
+  function toggleSection(label: string) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
   }
 
   // Predicate for each filterable stat card.
@@ -728,7 +739,7 @@ export function ClientsTable({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6">
+    <div className="flex flex-col gap-6 [@media(min-height:768px)]:h-full [@media(min-height:768px)]:min-h-0">
       <div className="flex items-center justify-end gap-2">
         <Button
           className="gap-2"
@@ -806,24 +817,43 @@ export function ClientsTable({
                 ] as const
               )
                 .filter((f) => f.opts.length > 0)
-                .map((f, i) => (
-                  <React.Fragment key={f.label}>
-                    {i > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {f.label}
-                    </DropdownMenuLabel>
-                    {f.opts.map((o) => (
-                      <DropdownMenuCheckboxItem
-                        key={o}
-                        checked={f.sel.includes(o)}
-                        onSelect={(e) => e.preventDefault()}
-                        onCheckedChange={() => toggle(f.setter, o)}
+                .map((f, i) => {
+                  const open = openSections.has(f.label);
+                  return (
+                    <React.Fragment key={f.label}>
+                      {i > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          toggleSection(f.label);
+                        }}
+                        className="flex items-center justify-between font-medium"
                       >
-                        {o}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </React.Fragment>
-                ))}
+                        <span className="flex items-center gap-2">
+                          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          {f.label}
+                        </span>
+                        {f.sel.length > 0 && (
+                          <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1">
+                            {f.sel.length}
+                          </Badge>
+                        )}
+                      </DropdownMenuItem>
+                      {open &&
+                        f.opts.map((o) => (
+                          <DropdownMenuCheckboxItem
+                            key={o}
+                            checked={f.sel.includes(o)}
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={() => toggle(f.setter, o)}
+                            className="pl-8"
+                          >
+                            {o}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                    </React.Fragment>
+                  );
+                })}
               {activeFilterCount > 0 && (
                 <>
                   <DropdownMenuSeparator />
@@ -846,8 +876,8 @@ export function ClientsTable({
         </div>
       )}
 
-      <Card className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-auto [&>div]:overflow-visible">
+      <Card className="flex flex-col [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
+        <div className="overflow-auto [&>div]:overflow-visible [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
           <Table>
             <TableHeader className="sticky top-0 z-10 [&_th]:bg-background">
               {table.getHeaderGroups().map((headerGroup) => (
