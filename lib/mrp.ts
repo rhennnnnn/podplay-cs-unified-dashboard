@@ -246,31 +246,83 @@ function normalize(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-// Distinctive tokens: lowercase alphanumeric words with generic filler removed,
-// sorted so word order doesn't matter. Empty if a name is ALL generic words.
-function distinctiveKey(name: string): string {
-  const tokens = name
+// Distinctive tokens: lowercase alphanumeric words with generic filler removed.
+// Empty if a name is ALL generic words.
+function distinctiveTokens(name: string): string[] {
+  return name
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((t) => t && !GENERIC_TOKENS.has(t));
-  return tokens.sort().join("|");
+}
+
+// Sorted distinctive-token join, so word order doesn't matter.
+function distinctiveKey(name: string): string {
+  return distinctiveTokens(name).sort().join("|");
+}
+
+// Tier 1 — exact normalized equality (fast, unambiguous).
+function findExact(name: string, records: MrpRecord[]): MrpRecord | null {
+  const target = normalize(name);
+  if (!target) return null;
+  return records.find((r) => normalize(r.club) === target) ?? null;
+}
+
+// Tier 2 — full distinctive-token-set equality. Tolerates trailing
+// "Club"/"Pickleball" differences without substring false positives.
+function findTokenSet(name: string, records: MrpRecord[]): MrpRecord | null {
+  const key = distinctiveKey(name);
+  if (!key) return null;
+  return records.find((r) => distinctiveKey(r.club) === key) ?? null;
+}
+
+// Tier 3 — distinctive-token SUBSET/superset. Matches when one name's tokens
+// are wholly contained in the other's — tolerates one side carrying an extra
+// qualifier ("Casa Pickle" vs "Casa Pickle Space City") that neither system
+// treats as generic. Guarded to a UNIQUE hit: an ambiguous name (e.g. bare
+// "Casa Pickle" when the sheet has both Galleria AND Space City) returns null
+// rather than guessing wrong. Token-subset ≠ raw substring, so it does NOT
+// reintroduce the Session 9 "Greystone" ⊂ "One+ Pickleball Club" false
+// positive ("greystone" and "one" share no token).
+function findTokenSubset(name: string, records: MrpRecord[]): MrpRecord | null {
+  const tokens = distinctiveTokens(name);
+  if (tokens.length === 0) return null;
+  const matches = records.filter((r) => {
+    const rt = distinctiveTokens(r.club);
+    if (rt.length === 0) return false;
+    const [small, big] = tokens.length <= rt.length ? [tokens, rt] : [rt, tokens];
+    const bigSet = new Set(big);
+    return small.every((t) => bigSet.has(t));
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+const MATCH_TIERS = [findExact, findTokenSet, findTokenSubset];
+
+// Matches a set of candidate names (e.g. an onboarding's own name AND its
+// parent company's name) against the MRP sheet, tier-by-tier: every candidate
+// is tried at the strictest tier before any candidate falls to a looser one,
+// so a precise exact match on the specific onboarding name always beats a loose
+// subset match on a less-specific parent company. Returns the first hit.
+export function matchByCompanyNames(
+  names: string | null | undefined | Array<string | null | undefined>,
+  records: MrpRecord[]
+): MrpRecord | null {
+  const candidates = (Array.isArray(names) ? names : [names]).filter(
+    (n): n is string => Boolean(n && n.trim())
+  );
+  if (candidates.length === 0) return null;
+  for (const tier of MATCH_TIERS) {
+    for (const name of candidates) {
+      const hit = tier(name, records);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 export function matchByCompanyName(
   hubspotCompanyName: string | null | undefined,
   records: MrpRecord[]
 ): MrpRecord | null {
-  if (!hubspotCompanyName) return null;
-
-  // 1. Exact normalized equality (fast, unambiguous).
-  const target = normalize(hubspotCompanyName);
-  if (!target) return null;
-  const exact = records.find((r) => normalize(r.club) === target);
-  if (exact) return exact;
-
-  // 2. Distinctive-token equality — tolerates trailing "Club"/"Pickleball"
-  //    differences without the substring false positives.
-  const targetKey = distinctiveKey(hubspotCompanyName);
-  if (!targetKey) return null;
-  return records.find((r) => distinctiveKey(r.club) === targetKey) ?? null;
+  return matchByCompanyNames(hubspotCompanyName, records);
 }

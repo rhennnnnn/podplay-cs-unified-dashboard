@@ -74,22 +74,40 @@ export function OnboardingDetailSheet({
   // which has to wait for the deal-detail fetch to resolve. This lets the MRP
   // fetch below start in parallel with deal-detail/activity instead of
   // waiting on deal-detail purely to learn a name we already had.
-  // Many onboarding deals have no linked HubSpot company (e.g. "Court 918"),
-  // so fall back to the deal name — it carries the same club identity the MRP
-  // sheet's "Club" column uses, and matchByCompanyName is token-based.
-  const companyName =
-    listItem?.company?.name ??
-    data?.companies[0]?.name ??
-    listItem?.properties?.hs_name ??
-    data?.deal.properties.hs_name ??
-    null;
+  // Match candidates, most-specific first. The onboarding's OWN name is the
+  // specific location ("Casa Pickle Space City"); the linked HubSpot company is
+  // often the less-specific parent ("Casa Pickle") that maps to several sheet
+  // rows. Sending the onboarding name first lets an exact match on it win over
+  // an ambiguous parent-company match. Many onboardings have no linked company
+  // at all (e.g. "Court 918"), so the deal name is also the fallback identity.
+  const nameCandidates = React.useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const n of [
+      listItem?.properties?.hs_name,
+      data?.deal.properties.hs_name,
+      listItem?.company?.name,
+      data?.companies[0]?.name,
+    ]) {
+      const t = n?.trim();
+      if (t && !seen.has(t.toLowerCase())) {
+        seen.add(t.toLowerCase());
+        out.push(t);
+      }
+    }
+    return out;
+  }, [listItem, data]);
   // Reads the cached joined HubSpot+MRP result — not a fresh per-open Sheets
   // API call. One sync run (lib/onboarding-sync.ts) serves every open sheet.
-  // Always fires (even with an empty company) once dealId is set, so the
-  // route can still report the real mrpStatus (e.g. access_pending) instead
-  // of the fetch silently never happening when a company name isn't known.
+  // Always fires (even with no candidate) once dealId is set, so the route can
+  // still report the real mrpStatus (e.g. access_pending) instead of the fetch
+  // silently never happening when a company name isn't known.
+  const mrpQuery =
+    nameCandidates.length > 0
+      ? nameCandidates.map((n) => `company=${encodeURIComponent(n)}`).join("&")
+      : "company=";
   const { data: mrpData, error: mrpError, isLoading: mrpLoading } = useSWR<MrpJoinedResponse>(
-    dealId ? `/api/mrp?company=${encodeURIComponent(companyName ?? "")}` : null,
+    dealId ? `/api/mrp?${mrpQuery}` : null,
     fetcher
   );
   const [trackedLocationId, setTrackedLocationId] = React.useState<string | null>(null);

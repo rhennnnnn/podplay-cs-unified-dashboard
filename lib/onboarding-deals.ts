@@ -17,7 +17,13 @@ import {
   type PipelineKey,
 } from "@/lib/hubspot";
 import type { PollTrigger } from "@/lib/api-health";
+import { readSnapshot, writeSnapshot, type SnapshotKey } from "@/lib/snapshot";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
+
+export const PIPELINE_SNAPSHOT_KEY: Record<PipelineKey, SnapshotKey> = {
+  basic: "onboarding:basic",
+  pro: "onboarding:pro",
+};
 
 const LIST_PROPERTIES = [
   "hs_name",
@@ -62,6 +68,15 @@ export interface BuildOptions {
   // well under the serverless timeout — the full email sweep only runs on the
   // hourly cron. Missing ids just get null until the next cron.
   priorLastEmails?: Record<string, OnboardingListItem["lastEmail"]>;
+  // When set (manual refresh), reuse prior contact/company/last-email enrichment
+  // by deal id and SKIP the association + object batch reads AND the email sweep
+  // entirely — only the deal search (stage/owner/props) is re-fetched. This keeps
+  // a manual rebuild to a single HubSpot round trip so it finishes under Vercel
+  // Hobby's 10s function cap (the sequential association+object+email fetches are
+  // what pushed the larger Pro/Auto pipeline past it). The hourly cron still does
+  // the full enrichment; deals absent from the prior snapshot get null enrichment
+  // until the next cron. Takes precedence over priorLastEmails when both are set.
+  priorEnrichment?: Record<string, Pick<OnboardingListItem, "contact" | "company" | "lastEmail">>;
 }
 
 // Fetches and enriches every deal in one pipeline. Paginates fully (pipelines
@@ -94,6 +109,20 @@ export async function buildPipelineDeals(
     total = data.total;
     after = data.paging?.next?.after;
     if (!after) break;
+  }
+
+  // Manual fast path: reuse prior enrichment, skip all association/object/email
+  // round trips. One search call total — fits Vercel Hobby's 10s cap.
+  if (opts.priorEnrichment) {
+    const prior = opts.priorEnrichment;
+    const deals: OnboardingListItem[] = all.map((r) => ({
+      id: r.id,
+      properties: r.properties,
+      contact: prior[r.id]?.contact ?? null,
+      company: prior[r.id]?.company ?? null,
+      lastEmail: prior[r.id]?.lastEmail ?? null,
+    }));
+    return { deals, total };
   }
 
   const ids = all.map((r) => r.id);
@@ -143,6 +172,35 @@ export async function buildPipelineDeals(
   });
 
   return { deals, total };
+}
+
+// Manual-refresh rebuild for ONE pipeline: reads the prior snapshot and reuses
+// its per-card enrichment (contact/company/last-email), so the rebuild only
+// re-fetches the deal search (stage/owner/props) — a single HubSpot round trip
+// that finishes well under Vercel Hobby's 10s function cap. Writes the snapshot
+// back and returns the fresh data with its write timestamp. On a cold cache
+// (no prior snapshot) it falls through to a full enrichment build.
+//
+// Two things this fixes for Manual Refresh on Pro/Auto(+), which silently
+// no-opped before:
+//   1. No server-to-server loopback fetch (the old route fetched its own
+//      /api/hubspot/deals with hand-forwarded cookies — fragile on Vercel).
+//   2. No association/object/email sweep on the larger Pro pipeline — that
+//      sequential fan-out is what pushed the function past the 10s Hobby cap.
+// The hourly cron (buildPipelineDeals with no priors) still does the full sweep.
+export async function refreshPipelineSnapshot(
+  pipeline: PipelineKey
+): Promise<PipelineDeals & { fetchedAt: string }> {
+  const snap = await readSnapshot<PipelineDeals>(PIPELINE_SNAPSHOT_KEY[pipeline]);
+  const priorEnrichment = snap
+    ? Object.fromEntries(
+        snap.data.deals.map((d) => [d.id, { contact: d.contact, company: d.company, lastEmail: d.lastEmail }])
+      )
+    : undefined;
+  const built = await buildPipelineDeals(pipeline, "manual", { priorEnrichment });
+  const fetchedAt = new Date().toISOString();
+  await writeSnapshot(PIPELINE_SNAPSHOT_KEY[pipeline], built).catch(() => {});
+  return { ...built, fetchedAt };
 }
 
 // In-memory filtering the read route applies over a pipeline snapshot.
