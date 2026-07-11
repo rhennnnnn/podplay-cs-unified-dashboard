@@ -36,6 +36,7 @@ const REFRESH_INTERVAL = 30 * 60_000;
 interface PollingSettings {
   autoPollIntervalMinutes: number;
   autoPollPaused: boolean;
+  autoImportPaused: boolean;
   manualRefreshPaused: boolean;
   pausedAll: boolean;
   nextRefreshAllowedAt: string | null;
@@ -49,6 +50,7 @@ interface OnboardingGridProps {
   trackerName: string;
   trackerRoster: string[];
   trackedDealIds: Set<string>;
+  autoImportEnabled: boolean;
 }
 
 export function OnboardingGrid({
@@ -56,6 +58,7 @@ export function OnboardingGrid({
   trackerName,
   trackerRoster,
   trackedDealIds: initialTracked,
+  autoImportEnabled: initialAutoImportEnabled,
 }: OnboardingGridProps) {
   const [pipeline, setPipeline] = React.useState<PipelineKey>("basic");
   const [owner, setOwner] = React.useState<string>("all");
@@ -226,6 +229,38 @@ export function OnboardingGrid({
     setTrackedIds((prev) => new Set(prev).add(dealId));
   }
 
+  // Auto-import ON unless the kill switch or the dedicated auto-import pause is
+  // set — independent of the board's polling pause. Live from the same SWR poll
+  // the refresh controls read, falling back to the server-rendered seed until it
+  // resolves. Mirrors shouldAllowAutoImport("hubspot") server-side.
+  const autoImportEnabled = polling
+    ? !(polling.pausedAll || polling.autoImportPaused)
+    : initialAutoImportEnabled;
+
+  const [importingDealId, setImportingDealId] = React.useState<string | null>(null);
+
+  async function handleImportNow(deal: OnboardingListItem) {
+    setImportingDealId(deal.id);
+    try {
+      const res = await fetch("/api/onboarding/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId: deal.id }),
+      });
+      const json = (await res.json()) as { status?: string; error?: string };
+      if (!res.ok) {
+        toast.error(json.error ?? "Import failed.");
+        return;
+      }
+      setTrackedIds((prev) => new Set(prev).add(deal.id));
+      toast.success(json.status === "exists" ? "Already in the tracker." : "Imported to the tracker.");
+    } catch {
+      toast.error("Import failed.");
+    } finally {
+      setImportingDealId(null);
+    }
+  }
+
   const hasAnyFilter = owner !== "all" || search.length > 0;
 
   return (
@@ -382,6 +417,9 @@ export function OnboardingGrid({
         ownerMap={ownerMap}
         isTracked={selectedDealId ? trackedIds.has(selectedDealId) : false}
         onTrackOpening={(deal) => setTrackDeal(deal)}
+        autoImportEnabled={autoImportEnabled}
+        onImportNow={handleImportNow}
+        isImporting={selectedDealId ? importingDealId === selectedDealId : false}
       />
 
       <TrackOpeningDialog

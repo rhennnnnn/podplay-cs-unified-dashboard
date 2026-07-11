@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getIntegrationSettings } from "@/lib/api-health";
 import type { Profile } from "@/lib/types";
 import { OnboardingGrid } from "@/components/onboarding/onboarding-grid";
 
@@ -6,11 +7,21 @@ export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
   const supabase = createClient();
-  const [{ data: userData }, { data: locations }, { data: profilesList }] = await Promise.all([
+  const [{ data: userData }, { data: locations }, { data: profilesList }, hubspotSettings] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("locations").select("hubspot_deal_id").not("hubspot_deal_id", "is", null),
     supabase.from("profiles").select("*"),
+    getIntegrationSettings("hubspot"),
   ]);
+
+  // Auto-import is "on" when neither the kill switch nor the dedicated
+  // auto-import pause is set on the HubSpot integration — the same condition
+  // shouldAllowAutoImport("hubspot") gates the cron on. Independent of the
+  // board's polling pause. Server value seeds the initial UI; the grid's own
+  // SWR poll keeps it live if an admin toggles it in another tab.
+  const autoImportEnabled = hubspotSettings
+    ? !(hubspotSettings.paused_all || hubspotSettings.auto_import_paused)
+    : true;
 
   const userEmail = userData.user?.email ?? "";
   // Same @supabase/ssr generic-collapsing typing defect documented in Session 2 —
@@ -30,6 +41,7 @@ export default async function OnboardingPage() {
       trackerName={trackerName}
       trackerRoster={trackerRoster}
       trackedDealIds={trackedDealIds}
+      autoImportEnabled={autoImportEnabled}
     />
   );
 }

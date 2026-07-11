@@ -12,13 +12,14 @@
 //           row. An already-populated field is left untouched — 15D owns the
 //           ongoing overwrite/conflict logic.
 //
-// Each half is gated by the existing shouldAllowPoll() (Session 15C only has to
-// keep these calls, not restructure the loop). Idempotent: a row that already
+// Each half is gated by shouldAllowAutoImport() — a dedicated auto-import pause
+// (api_integrations.auto_import_paused), independent of the board's polling
+// pause. Idempotent: a row that already
 // exists / a field that's already filled is skipped, so re-running is a no-op.
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSnapshot } from "@/lib/snapshot";
-import { shouldAllowPoll } from "@/lib/api-health";
+import { shouldAllowAutoImport } from "@/lib/api-health";
 import { matchNames, type MrpRecord } from "@/lib/mrp";
 import { parseFlexDate, isNa } from "@/lib/tracker-mrp";
 import { mapOnboardingToLocation, deriveImportStatus } from "@/lib/track-opening-map";
@@ -50,6 +51,109 @@ async function readOnboardingDeals(): Promise<OnboardingListItem[]> {
   return [...(basic?.data.deals ?? []), ...(pro?.data.deals ?? [])];
 }
 
+// Team roster resolver: HubSpot owner -> tracker name. The tracker only ever
+// holds people who exist on the team (profiles), so an onboarding owned by
+// someone not on the team resolves to null (blank tracker), per the Session 15B
+// follow-up. Built once, reused by the sweep and the single-record import.
+async function buildTrackerResolver(
+  admin: ReturnType<typeof createAdminClient>
+): Promise<(deal: OnboardingListItem) => string | null> {
+  const { data: profData } = await admin.from("profiles").select("email, first_name");
+  const profiles = (profData ?? []) as unknown as { email: string; first_name: string }[];
+  const emailToName = new Map(profiles.map((p) => [p.email.toLowerCase(), p.first_name]));
+  const ownersSnap = await readSnapshot<HubspotOwner[]>("hubspot:owners");
+  const ownerById = new Map((ownersSnap?.data ?? []).map((o) => [o.id, o]));
+  return (deal) => {
+    const ownerId = deal.properties.hubspot_owner_id;
+    if (!ownerId) return null;
+    const owner = ownerById.get(ownerId);
+    if (!owner?.email) return null;
+    return emailToName.get(owner.email.toLowerCase()) ?? null; // not on team -> blank
+  };
+}
+
+// Existing-row lookup: ID match on hubspot_deal_id first (15A's durable link is
+// authoritative), name-match fallback only for rows not yet linked.
+function findExistingLocation(deal: OnboardingListItem, locations: Location[]): Location | null | undefined {
+  return (
+    (deal.id ? locations.find((l) => l.hubspot_deal_id === deal.id) : undefined) ??
+    matchNames(deal.properties.hs_name ?? "", locations, (l) => l.name)
+  );
+}
+
+// The canonical insert payload for an auto-imported onboarding — shared so the
+// sweep and the single-record "Import Now" build identical rows.
+function buildImportPayload(deal: OnboardingListItem, trackerName: string | null) {
+  const m = mapOnboardingToLocation(deal);
+  const status = deriveImportStatus(deal);
+  return {
+    id: m.id,
+    client_name: m.client_name,
+    name: m.name,
+    tier: m.tier || null,
+    opening_date: m.opening_date,
+    // Completed onboardings land on the Opened tab; give them an opened_date
+    // so they don't render as opened-with-no-date.
+    opened_date: status === "opened" ? m.opening_date : null,
+    tracker: trackerName,
+    status,
+    notes: null,
+    hubspot_deal_id: deal.id,
+    pre_open_done: false,
+    post_open_done: false,
+  };
+}
+
+export type ImportOnboardingResult =
+  | { status: "imported"; locationId: string }
+  | { status: "exists" }
+  | { status: "not_found" }
+  | { status: "error" };
+
+// Single-record import used by the "Import Now" button (Session 15C). Runs the
+// SAME mapping/insert/logging path as the cron sweep for exactly one onboarding,
+// so a CSA can pull a record in immediately instead of waiting for the next
+// hourly tick. Not gated by shouldAllowPoll — the UI only surfaces this button
+// when auto-import is ON; a paused integration shows the manual dialog instead.
+export async function importOnboardingById(
+  dealId: string,
+  actorEmail: string
+): Promise<ImportOnboardingResult> {
+  const admin = createAdminClient();
+
+  const [deals, { data: locData, error }] = await Promise.all([
+    readOnboardingDeals(),
+    admin.from("locations").select("*"),
+  ]);
+  if (error) return { status: "error" };
+  const locations = (locData ?? []) as unknown as Location[];
+
+  const deal = deals.find((d) => d.id === dealId);
+  if (!deal) return { status: "not_found" };
+
+  if (findExistingLocation(deal, locations)) return { status: "exists" };
+  if (!(deal.properties.hs_name ?? "").trim()) return { status: "error" };
+
+  const resolveTracker = await buildTrackerResolver(admin);
+  const payload = buildImportPayload(deal, resolveTracker(deal));
+
+  const { error: insErr } = await admin.from("locations").insert(payload as never);
+  if (insErr) {
+    // Unique-index violation (a racing cron tick / concurrent click already
+    // inserted the row) surfaces here — treat as already-tracked, not a failure.
+    return { status: "exists" };
+  }
+
+  await admin.from("activity_log").insert({
+    user_email: actorEmail,
+    action: "created",
+    entity: payload.name,
+    details: `Imported from HubSpot (deal ${deal.id})`,
+  } as never);
+
+  return { status: "imported", locationId: payload.id };
+}
+
 // MRP "M/D/YYYY" (or ISO) -> date-only ISO "YYYY-MM-DD"; null for empty/N/A.
 function toIsoFromFlex(value: string | null | undefined): string | null {
   const d = parseFlexDate(value);
@@ -74,30 +178,15 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
     backfillSkippedPaused: false,
   };
 
-  const [{ data: locData, error }, { data: profData }] = await Promise.all([
+  const [{ data: locData, error }, trackerForDeal] = await Promise.all([
     admin.from("locations").select("*"),
-    admin.from("profiles").select("email, first_name"),
+    buildTrackerResolver(admin),
   ]);
   if (error) throw new Error(error.message);
   let locations = (locData ?? []) as unknown as Location[];
 
-  // Team roster: HubSpot owner -> tracker name. The tracker only ever holds
-  // people who exist on the team (profiles), so an onboarding owned by someone
-  // not on the team imports with a BLANK tracker (per user, Session 15B follow-up).
-  const profiles = (profData ?? []) as unknown as { email: string; first_name: string }[];
-  const emailToName = new Map(profiles.map((p) => [p.email.toLowerCase(), p.first_name]));
-  const ownersSnap = await readSnapshot<HubspotOwner[]>("hubspot:owners");
-  const ownerById = new Map((ownersSnap?.data ?? []).map((o) => [o.id, o]));
-  function trackerForDeal(deal: OnboardingListItem): string | null {
-    const ownerId = deal.properties.hubspot_owner_id;
-    if (!ownerId) return null;
-    const owner = ownerById.get(ownerId);
-    if (!owner?.email) return null;
-    return emailToName.get(owner.email.toLowerCase()) ?? null; // not on team -> blank
-  }
-
   // ---- PART A: HubSpot -> tracker auto-import -------------------------------
-  const allowHubspot = await shouldAllowPoll("hubspot", "auto");
+  const allowHubspot = await shouldAllowAutoImport("hubspot");
   if (!allowHubspot) {
     result.importSkippedPaused = true;
   } else {
@@ -115,10 +204,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
 
       const trackerName = trackerForDeal(deal);
 
-      // ID match first (15A's durable link is authoritative), then name-match.
-      const existing =
-        (deal.id ? locations.find((l) => l.hubspot_deal_id === deal.id) : undefined) ??
-        matchNames(deal.properties.hs_name ?? "", locations, (l) => l.name);
+      const existing = findExistingLocation(deal, locations);
 
       if (existing) {
         // Row already tracked — only backfill a BLANK tracker from the owner.
@@ -143,24 +229,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
 
       if (!(deal.properties.hs_name ?? "").trim()) continue; // no name -> can't map
 
-      const m = mapOnboardingToLocation(deal);
-      const status = deriveImportStatus(deal);
-      const payload = {
-        id: m.id,
-        client_name: m.client_name,
-        name: m.name,
-        tier: m.tier || null,
-        opening_date: m.opening_date,
-        // Completed onboardings land on the Opened tab; give them an opened_date
-        // so they don't render as opened-with-no-date.
-        opened_date: status === "opened" ? m.opening_date : null,
-        tracker: trackerName,
-        status,
-        notes: null,
-        hubspot_deal_id: deal.id,
-        pre_open_done: false,
-        post_open_done: false,
-      };
+      const payload = buildImportPayload(deal, trackerName);
 
       const { error: insErr } = await admin.from("locations").insert(payload as never);
       if (insErr) {
@@ -172,7 +241,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
       await admin.from("activity_log").insert({
         user_email: actorEmail,
         action: "created",
-        entity: m.name,
+        entity: payload.name,
         details: `Auto-imported from HubSpot (deal ${deal.id})`,
       } as never);
 
@@ -186,7 +255,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
   }
 
   // ---- PART B: MRP -> tracker backfill (blanks only) ------------------------
-  const allowMrp = await shouldAllowPoll("mrp_sheets", "auto");
+  const allowMrp = await shouldAllowAutoImport("mrp_sheets");
   if (!allowMrp) {
     result.backfillSkippedPaused = true;
     return result;

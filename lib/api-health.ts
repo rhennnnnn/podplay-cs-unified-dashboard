@@ -78,7 +78,12 @@ export async function recordCall(
 
 export type IntegrationPollSettings = Pick<
   ApiIntegration,
-  "auto_poll_interval_minutes" | "auto_poll_paused" | "manual_refresh_paused" | "paused_all" | "next_refresh_allowed_at"
+  | "auto_poll_interval_minutes"
+  | "auto_poll_paused"
+  | "auto_import_paused"
+  | "manual_refresh_paused"
+  | "paused_all"
+  | "next_refresh_allowed_at"
 >;
 
 // Lightweight status-only read — used by the MRP route to pick the right
@@ -95,10 +100,26 @@ export async function getIntegrationSettings(integrationId: string): Promise<Int
   return {
     auto_poll_interval_minutes: row.auto_poll_interval_minutes,
     auto_poll_paused: row.auto_poll_paused,
+    auto_import_paused: row.auto_import_paused,
     manual_refresh_paused: row.manual_refresh_paused,
     paused_all: row.paused_all,
     next_refresh_allowed_at: row.next_refresh_allowed_at,
   };
+}
+
+// Auto-import gate — INDEPENDENT of auto_poll_paused (which only governs the
+// board's auto-refresh). Auto-import runs unless it's specifically paused or the
+// integration-wide kill switch is on. Fails open so a health-table read error
+// never silently stops imports.
+export async function shouldAllowAutoImport(integrationId: string): Promise<boolean> {
+  try {
+    const settings = await getIntegrationSettings(integrationId);
+    if (!settings) return true; // not configured yet — nothing to gate on
+    if (settings.paused_all) return false;
+    return !settings.auto_import_paused;
+  } catch {
+    return true; // fail open
+  }
 }
 
 export async function shouldAllowPoll(integrationId: string, trigger: PollTrigger): Promise<boolean> {

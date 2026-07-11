@@ -9,6 +9,7 @@ interface PatchBody {
   requests_limit_per_day?: number | null;
   auto_poll_interval_minutes?: number;
   auto_poll_paused?: boolean;
+  auto_import_paused?: boolean;
   manual_refresh_paused?: boolean;
   paused_all?: boolean;
 }
@@ -37,6 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     updates.auto_poll_interval_minutes = interval;
   }
   if ("auto_poll_paused" in body) updates.auto_poll_paused = body.auto_poll_paused;
+  if ("auto_import_paused" in body) updates.auto_import_paused = body.auto_import_paused;
   if ("manual_refresh_paused" in body) updates.manual_refresh_paused = body.manual_refresh_paused;
   if ("paused_all" in body) updates.paused_all = body.paused_all;
 
