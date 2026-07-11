@@ -7,15 +7,17 @@ import { refreshPipelineSnapshot } from "@/lib/onboarding-deals";
 import { getCombinedNextRefreshAllowedAt, runOnboardingSync } from "@/lib/onboarding-sync";
 
 export const dynamic = "force-dynamic";
-// The manual refresh does a full live rebuild (HubSpot pipeline enrichment +
-// MRP), which for Pro/Auto (~56 deals with per-card email lookups) can exceed
-// the default serverless timeout and silently fail — the board would then keep
-// showing the old "Updated X ago". Give it the full window.
+// maxDuration is honored on paid Vercel plans; the production project is on
+// Hobby (hard 10s cap regardless of this value). The manual refresh is kept
+// under that cap by (a) rebuilding ONLY the viewed pipeline, (b) reusing the
+// prior snapshot's enrichment so the HubSpot rebuild is a single search call
+// (see refreshPipelineSnapshot), and (c) running the HubSpot and MRP refreshes
+// concurrently below rather than back-to-back.
 export const maxDuration = 60;
 
-// POST — server-only. The Onboarding board's Refresh button calls this
-// instead of hitting HubSpot directly, so one click refreshes BOTH HubSpot
-// and MRP in sequence, then re-runs the cross-check.
+// POST — server-only. The Onboarding board's Refresh button calls this instead
+// of hitting HubSpot directly, so one click refreshes both HubSpot and MRP,
+// then re-runs the cross-check.
 export async function POST(request: NextRequest) {
   const supabase = createClient();
   const { data } = await supabase.auth.getUser();
@@ -24,36 +26,32 @@ export async function POST(request: NextRequest) {
   }
 
   // Rebuild the currently-viewed pipeline's snapshot DIRECTLY (no server-to-
-  // server loopback fetch to /api/hubspot/deals). The old loopback pattern —
-  // this handler fetching its own API route with hand-forwarded cookies — was
-  // the confirmed cause of Manual Refresh silently no-opping on Pro/Auto(+):
-  // the in-function round-trip added latency and a cookie-auth failure mode
-  // that the larger Pro pipeline hit under the timeout. refreshPipelineSnapshot
-  // is exactly what the deals route's manual path calls, so no behavior is
-  // lost (prior-last-email reuse included).
+  // server loopback fetch to /api/hubspot/deals). refreshPipelineSnapshot reuses
+  // the prior snapshot's enrichment, so this is one HubSpot search call.
   const pipelineParam = request.nextUrl.searchParams.get("pipeline");
   const pipelines: PipelineKey[] =
     pipelineParam === "basic" || pipelineParam === "pro" ? [pipelineParam] : ["basic", "pro"];
 
-  let hubspotOutcome: "ran" | "skipped" | "error" = "skipped";
-  try {
-    const hubspotAllowed = await shouldAllowPoll("hubspot", "manual");
-    if (hubspotAllowed) {
+  // HubSpot rebuild and MRP refresh are independent — run them concurrently so
+  // total wall-clock is max(hubspot, mrp), not their sum. Sequential execution
+  // was part of what pushed Pro/Auto past the Hobby 10s cap.
+  const hubspotTask = (async (): Promise<"ran" | "skipped" | "error"> => {
+    try {
+      if (!(await shouldAllowPoll("hubspot", "manual"))) return "skipped";
       await Promise.all(pipelines.map((p) => refreshPipelineSnapshot(p)));
-      hubspotOutcome = "ran";
+      return "ran";
+    } catch (err) {
+      // Surface the real failure server-side so this class of bug is diagnosable
+      // next time instead of a silent generic "error" outcome with no trace.
+      console.error(
+        `[onboarding-sync/refresh] HubSpot rebuild failed (pipelines=${pipelines.join(",")}):`,
+        err
+      );
+      return "error";
     }
-  } catch (err) {
-    // Surface the real failure server-side so this class of bug is diagnosable
-    // next time instead of a silent generic "error" outcome with no trace.
-    console.error(
-      `[onboarding-sync/refresh] HubSpot rebuild failed (pipelines=${pipelines.join(",")}):`,
-      err
-    );
-    hubspotOutcome = "error";
-  }
+  })();
 
-  // THEN MRP + cross-check — only starts after the HubSpot call above resolves.
-  const syncOutcome = await runOnboardingSync("manual");
+  const [hubspotOutcome, syncOutcome] = await Promise.all([hubspotTask, runOnboardingSync("manual")]);
 
   const nextRefreshAllowedAt = await getCombinedNextRefreshAllowedAt();
 
