@@ -284,6 +284,23 @@ function IntegrationCard({
             onCheckedChange={(checked) => onPatch({ auto_poll_paused: checked })}
             disabled={integration.paused_all}
           />
+          {(integration.id === "hubspot" || integration.id === "mrp_sheets") && (
+            <ToggleRow
+              label="Pause Auto-Import"
+              description={
+                integration.auto_import_paused
+                  ? integration.id === "hubspot"
+                    ? "Auto-import paused: new onboardings won't be pulled into the tracker automatically."
+                    : "MRP backfill paused: linked tracker rows won't be auto-filled from the sheet."
+                  : integration.id === "hubspot"
+                    ? "New onboardings are imported into the tracker each sync. Independent of polling."
+                    : "Blank tracker date fields are backfilled from MRP each sync. Independent of polling."
+              }
+              checked={integration.auto_import_paused}
+              onCheckedChange={(checked) => onPatch({ auto_import_paused: checked })}
+              disabled={integration.paused_all}
+            />
+          )}
           <ToggleRow
             label="Pause Manual Refresh"
             description={

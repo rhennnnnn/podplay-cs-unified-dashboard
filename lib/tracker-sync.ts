@@ -12,13 +12,14 @@
 //           row. An already-populated field is left untouched — 15D owns the
 //           ongoing overwrite/conflict logic.
 //
-// Each half is gated by the existing shouldAllowPoll() (Session 15C only has to
-// keep these calls, not restructure the loop). Idempotent: a row that already
+// Each half is gated by shouldAllowAutoImport() — a dedicated auto-import pause
+// (api_integrations.auto_import_paused), independent of the board's polling
+// pause. Idempotent: a row that already
 // exists / a field that's already filled is skipped, so re-running is a no-op.
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSnapshot } from "@/lib/snapshot";
-import { shouldAllowPoll } from "@/lib/api-health";
+import { shouldAllowAutoImport } from "@/lib/api-health";
 import { matchNames, type MrpRecord } from "@/lib/mrp";
 import { parseFlexDate, isNa } from "@/lib/tracker-mrp";
 import { mapOnboardingToLocation, deriveImportStatus } from "@/lib/track-opening-map";
@@ -185,7 +186,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
   let locations = (locData ?? []) as unknown as Location[];
 
   // ---- PART A: HubSpot -> tracker auto-import -------------------------------
-  const allowHubspot = await shouldAllowPoll("hubspot", "auto");
+  const allowHubspot = await shouldAllowAutoImport("hubspot");
   if (!allowHubspot) {
     result.importSkippedPaused = true;
   } else {
@@ -254,7 +255,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
   }
 
   // ---- PART B: MRP -> tracker backfill (blanks only) ------------------------
-  const allowMrp = await shouldAllowPoll("mrp_sheets", "auto");
+  const allowMrp = await shouldAllowAutoImport("mrp_sheets");
   if (!allowMrp) {
     result.backfillSkippedPaused = true;
     return result;

@@ -14,12 +14,13 @@ export default async function OnboardingPage() {
     getIntegrationSettings("hubspot"),
   ]);
 
-  // Auto-import is "on" when neither the all-pause nor the auto-poll pause is set
-  // on the HubSpot integration — the same condition shouldAllowPoll("hubspot",
-  // "auto") gates the cron on. Server value seeds the initial UI; the grid's own
+  // Auto-import is "on" when neither the kill switch nor the dedicated
+  // auto-import pause is set on the HubSpot integration — the same condition
+  // shouldAllowAutoImport("hubspot") gates the cron on. Independent of the
+  // board's polling pause. Server value seeds the initial UI; the grid's own
   // SWR poll keeps it live if an admin toggles it in another tab.
   const autoImportEnabled = hubspotSettings
-    ? !(hubspotSettings.paused_all || hubspotSettings.auto_poll_paused)
+    ? !(hubspotSettings.paused_all || hubspotSettings.auto_import_paused)
     : true;
 
   const userEmail = userData.user?.email ?? "";

@@ -24,6 +24,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   return NextResponse.json({
     autoPollIntervalMinutes: settings.auto_poll_interval_minutes,
     autoPollPaused: settings.auto_poll_paused,
+    autoImportPaused: settings.auto_import_paused,
     manualRefreshPaused: settings.manual_refresh_paused,
     pausedAll: settings.paused_all,
     nextRefreshAllowedAt: settings.next_refresh_allowed_at,

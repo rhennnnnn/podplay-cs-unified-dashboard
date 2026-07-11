@@ -77,6 +77,7 @@ export interface ApiIntegration {
   requests_limit_per_day: number | null;
   auto_poll_interval_minutes: number;
   auto_poll_paused: boolean;
+  auto_import_paused: boolean;
   manual_refresh_paused: boolean;
   paused_all: boolean;
   next_refresh_allowed_at: string | null;

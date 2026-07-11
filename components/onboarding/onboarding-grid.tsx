@@ -36,6 +36,7 @@ const REFRESH_INTERVAL = 30 * 60_000;
 interface PollingSettings {
   autoPollIntervalMinutes: number;
   autoPollPaused: boolean;
+  autoImportPaused: boolean;
   manualRefreshPaused: boolean;
   pausedAll: boolean;
   nextRefreshAllowedAt: string | null;
@@ -228,11 +229,12 @@ export function OnboardingGrid({
     setTrackedIds((prev) => new Set(prev).add(dealId));
   }
 
-  // Auto-import ON when HubSpot polling isn't paused (all/auto). Live from the
-  // same SWR poll the refresh controls read, falling back to the server-rendered
-  // seed until it resolves. Mirrors shouldAllowPoll("hubspot","auto") server-side.
+  // Auto-import ON unless the kill switch or the dedicated auto-import pause is
+  // set — independent of the board's polling pause. Live from the same SWR poll
+  // the refresh controls read, falling back to the server-rendered seed until it
+  // resolves. Mirrors shouldAllowAutoImport("hubspot") server-side.
   const autoImportEnabled = polling
-    ? !(polling.pausedAll || polling.autoPollPaused)
+    ? !(polling.pausedAll || polling.autoImportPaused)
     : initialAutoImportEnabled;
 
   const [importingDealId, setImportingDealId] = React.useState<string | null>(null);
