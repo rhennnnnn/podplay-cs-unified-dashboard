@@ -5,6 +5,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { SHARED_FIELDS } from "@/lib/tracker-link";
 import type { LocationFieldSync } from "@/lib/types";
 
+// Only the columns a tracker edit sets. The seen-value columns are deliberately
+// omitted so this upsert preserves them (PostgREST ON CONFLICT updates only
+// provided columns) — leaving external change-detection state intact.
+type LedgerEdit = Pick<LocationFieldSync, "location_id" | "field_name" | "source" | "source_updated_at" | "value" | "updated_at">;
+
 export const dynamic = "force-dynamic";
 
 // Session 15D Part C — tracker-side write hook for the last-write-wins ledger.
@@ -35,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const rows: LocationFieldSync[] = [];
+  const rows: LedgerEdit[] = [];
   for (const field of SHARED_FIELDS) {
     if (!(field in fields)) continue; // only record fields the UI actually wrote
     const raw = fields[field];
