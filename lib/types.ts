@@ -29,6 +29,12 @@ export interface LocationFieldSync {
   source: FieldSyncSource;
   source_updated_at: string;
   value: string | null;
+  // Last value each external source reported for this field (015D/017). A source
+  // "changed" the field only when its freshly-observed value differs from these
+  // — per-field delta detection, so an unrelated HubSpot edit can't revert a
+  // tracker value via a stale object-level timestamp.
+  hubspot_seen_value: string | null;
+  mrp_seen_value: string | null;
   updated_at: string;
 }
 
