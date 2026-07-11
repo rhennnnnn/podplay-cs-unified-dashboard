@@ -43,6 +43,8 @@ import {
   isOpenedThisMonth,
   isOpeningThisWeek,
   openReadinessChecklist,
+  STATUS_BADGE_VARIANT,
+  STATUS_LABEL,
 } from "@/lib/client-hub";
 import { OPENING_TIER_TEXT_CLASS } from "@/lib/opening-date-status";
 import {
@@ -876,7 +878,7 @@ export function ClientsTable({
         </div>
       )}
 
-      <Card className="flex flex-col [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
+      <Card className="hidden flex-col md:flex [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
         <div className="overflow-auto [&>div]:overflow-visible [@media(min-height:768px)]:min-h-0 [@media(min-height:768px)]:flex-1">
           <Table>
             <TableHeader className="sticky top-0 z-10 [&_th]:bg-background">
@@ -922,6 +924,79 @@ export function ClientsTable({
           </Table>
         </div>
       </Card>
+
+      {/* Mobile card list — the 15-column table is unusable on phones. */}
+      <div className="space-y-2 md:hidden">
+        {table.getRowModel().rows.length === 0 ? (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            {statFilter ? "No rows match this stat card." : "No clients match your filters."}
+          </Card>
+        ) : (
+          table.getRowModel().rows.map((row) => {
+            const l = row.original;
+            const f = flagsByLocation[l.id];
+            const attention = tab === "active" && !!f?.needsAttention;
+            const dateStr = tab === "opened" ? l.opened_date : l.opening_date;
+            const dateTier = tab === "opened" ? null : f?.openingTier ?? null;
+            const overdue = isFollowUpOverdue(l);
+            const pct = readinessByLocation[l.id]?.pct ?? 0;
+            return (
+              <Card
+                key={l.id}
+                onClick={() => {
+                  setSelected(l);
+                  setSheetOpen(true);
+                }}
+                className={cn(
+                  "cursor-pointer p-3",
+                  attention && "border-l-2 border-l-destructive/60 bg-destructive/[0.04]"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{l.client_name || "—"}</div>
+                    <div className="truncate text-sm text-muted-foreground">{l.name}</div>
+                  </div>
+                  <Badge variant={STATUS_BADGE_VARIANT[l.status]} className="shrink-0">
+                    {STATUS_LABEL[l.status]}
+                  </Badge>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+                  <div>
+                    <span className="text-xs text-muted-foreground">Tier</span>
+                    <div>{l.tier || "—"}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">{tab === "opened" ? "Opened" : "Opening"}</span>
+                    <div className={dateTier ? OPENING_TIER_TEXT_CLASS[dateTier] : ""}>
+                      {dateStr ? formatDate(dateStr) : tab === "active" ? <MissingMark /> : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Tracking</span>
+                    <div className={f?.noTracking ? OPENING_TIER_TEXT_CLASS.overdue : ""}>
+                      {f?.noTracking ? "None" : l.tracker}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Readiness</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={pct} className="h-1.5 flex-1" />
+                      <span className="text-xs text-muted-foreground">{pct}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-1">
+                  <FollowUpTag label="Pre" done={l.pre_open_done} overdue={overdue && !l.pre_open_done} />
+                  <FollowUpTag label="Post" done={l.post_open_done} overdue={overdue && !l.post_open_done} />
+                </div>
+              </Card>
+            );
+          })
+        )}
+      </div>
 
       <ClientDetailSheet
         open={sheetOpen}
