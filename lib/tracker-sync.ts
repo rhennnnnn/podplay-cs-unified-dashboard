@@ -1,0 +1,202 @@
+// Session 15B — hourly auto-import + MRP backfill (server-only).
+//
+// Two steps, both run on the existing cron heartbeat (app/api/cron/refresh),
+// reading ONLY the DB snapshot cache (CONTEXT.md Data flow) — never a live
+// HubSpot/Sheets fetch:
+//
+//   PART A  HubSpot -> tracker auto-import. Every onboarding with no matching
+//           `locations` row (ID-match on hubspot_deal_id first, name-match
+//           fallback) is inserted, reusing the shared Track Opening mapping.
+//   PART B  MRP -> tracker backfill. Every `locations` row with an mrp_row_key
+//           (from 15A) gets its BLANK date fields filled from the matched MRP
+//           row. An already-populated field is left untouched — 15D owns the
+//           ongoing overwrite/conflict logic.
+//
+// Each half is gated by the existing shouldAllowPoll() (Session 15C only has to
+// keep these calls, not restructure the loop). Idempotent: a row that already
+// exists / a field that's already filled is skipped, so re-running is a no-op.
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { readSnapshot } from "@/lib/snapshot";
+import { shouldAllowPoll } from "@/lib/api-health";
+import { matchNames, type MrpRecord } from "@/lib/mrp";
+import { parseFlexDate, isNa } from "@/lib/tracker-mrp";
+import { mapOnboardingToLocation, deriveImportStatus } from "@/lib/track-opening-map";
+import type { Location } from "@/lib/types";
+import type { PipelineDeals } from "@/lib/onboarding-deals";
+import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
+
+// Cap imports per tick so a large first-run backlog can't blow the Vercel Hobby
+// 10s cap. Remaining rows are picked up on the next heartbeat (idempotent).
+const MAX_IMPORTS_PER_TICK = 25;
+
+export interface TrackerSyncResult {
+  importScanned: number;
+  imported: number;
+  importCapped: boolean;
+  importSkippedPaused: boolean;
+  backfillScanned: number;
+  backfilled: number; // rows that had >=1 field filled
+  backfillSkippedPaused: boolean;
+}
+
+async function readOnboardingDeals(): Promise<OnboardingListItem[]> {
+  const [basic, pro] = await Promise.all([
+    readSnapshot<PipelineDeals>("onboarding:basic"),
+    readSnapshot<PipelineDeals>("onboarding:pro"),
+  ]);
+  return [...(basic?.data.deals ?? []), ...(pro?.data.deals ?? [])];
+}
+
+// MRP "M/D/YYYY" (or ISO) -> date-only ISO "YYYY-MM-DD"; null for empty/N/A.
+function toIsoFromFlex(value: string | null | undefined): string | null {
+  const d = parseFlexDate(value);
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export async function runTrackerImportSync(actorEmail: string): Promise<TrackerSyncResult> {
+  const admin = createAdminClient();
+
+  const result: TrackerSyncResult = {
+    importScanned: 0,
+    imported: 0,
+    importCapped: false,
+    importSkippedPaused: false,
+    backfillScanned: 0,
+    backfilled: 0,
+    backfillSkippedPaused: false,
+  };
+
+  const { data: locData, error } = await admin.from("locations").select("*");
+  if (error) throw new Error(error.message);
+  let locations = (locData ?? []) as unknown as Location[];
+
+  // ---- PART A: HubSpot -> tracker auto-import -------------------------------
+  const allowHubspot = await shouldAllowPoll("hubspot", "auto");
+  if (!allowHubspot) {
+    result.importSkippedPaused = true;
+  } else {
+    const deals = await readOnboardingDeals();
+    result.importScanned = deals.length;
+
+    const linkedIds = new Set(
+      locations.map((l) => l.hubspot_deal_id).filter((id): id is string => Boolean(id))
+    );
+
+    const inserted: Location[] = [];
+    for (const deal of deals) {
+      if (result.imported >= MAX_IMPORTS_PER_TICK) {
+        result.importCapped = true;
+        break;
+      }
+      // ID match first — the durable link (15A) is authoritative.
+      if (linkedIds.has(deal.id)) continue;
+      // Name-match fallback: an existing row 15A didn't link yet still counts as
+      // "already in the tracker" — do NOT create a duplicate.
+      const existing = matchNames(
+        deal.properties.hs_name ?? "",
+        locations,
+        (l) => l.name
+      );
+      if (existing) continue;
+      if (!(deal.properties.hs_name ?? "").trim()) continue; // no name -> can't map
+
+      const m = mapOnboardingToLocation(deal);
+      const status = deriveImportStatus(deal);
+      const payload = {
+        id: m.id,
+        client_name: m.client_name,
+        name: m.name,
+        tier: m.tier || null,
+        opening_date: m.opening_date,
+        // Completed onboardings land on the Opened tab; give them an opened_date
+        // so they don't render as opened-with-no-date.
+        opened_date: status === "opened" ? m.opening_date : null,
+        tracker: null,
+        status,
+        notes: null,
+        hubspot_deal_id: deal.id,
+        pre_open_done: false,
+        post_open_done: false,
+      };
+
+      const { error: insErr } = await admin.from("locations").insert(payload as never);
+      if (insErr) {
+        // A slug collision means the row effectively already exists — skip, don't
+        // abort the whole sweep.
+        continue;
+      }
+
+      await admin.from("activity_log").insert({
+        user_email: actorEmail,
+        action: "created",
+        entity: m.name,
+        details: `Auto-imported from HubSpot (deal ${deal.id})`,
+      } as never);
+
+      linkedIds.add(deal.id);
+      inserted.push({ ...(payload as unknown as Location) });
+      result.imported++;
+    }
+
+    // Fold new rows into the working set so Part B can backfill them too if they
+    // ever gain an mrp_row_key (they won't this tick — kept for correctness).
+    if (inserted.length) locations = [...locations, ...inserted];
+  }
+
+  // ---- PART B: MRP -> tracker backfill (blanks only) ------------------------
+  const allowMrp = await shouldAllowPoll("mrp_sheets", "auto");
+  if (!allowMrp) {
+    result.backfillSkippedPaused = true;
+    return result;
+  }
+
+  const mrpSnap = await readSnapshot<MrpRecord[]>("mrp:records");
+  const mrpRecords = mrpSnap?.data ?? [];
+  const byClub = new Map(mrpRecords.map((r) => [r.club, r]));
+
+  for (const loc of locations) {
+    if (!loc.mrp_row_key) continue;
+    result.backfillScanned++;
+    const rec = byClub.get(loc.mrp_row_key);
+    if (!rec) continue;
+
+    // MRP-sourced tracker fields (only what the sheet genuinely provides).
+    const candidates: { field: keyof Location; value: string | null }[] = [
+      { field: "delivery_date", value: toIsoFromFlex(rec.hardwareDeliveryDate) },
+      { field: "opening_date", value: toIsoFromFlex(rec.grandOpening ?? rec.softOpening) },
+    ];
+
+    const update: Record<string, string> = {};
+    const logged: string[] = [];
+    for (const c of candidates) {
+      // Fill only when the tracker field is BLANK and MRP has a real value.
+      if (c.value && isNa(loc[c.field] as string | null)) {
+        update[c.field] = c.value;
+        logged.push(`${c.field}=${c.value}`);
+      }
+    }
+
+    if (Object.keys(update).length === 0) continue;
+
+    const { error: upErr } = await admin
+      .from("locations")
+      .update(update as never)
+      .eq("id", loc.id);
+    if (upErr) continue;
+
+    await admin.from("activity_log").insert({
+      user_email: actorEmail,
+      action: "updated",
+      entity: loc.name,
+      details: `Backfilled from MRP: ${logged.join(", ")}`,
+    } as never);
+    result.backfilled++;
+  }
+
+  return result;
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { buildPipelineDeals } from "@/lib/onboarding-deals";
 import { refreshMrpRecords } from "@/lib/onboarding-sync";
+import { runTrackerImportSync } from "@/lib/tracker-sync";
 import { writeSnapshot } from "@/lib/snapshot";
 import { fetchOwnersLive, type PipelineKey } from "@/lib/hubspot";
 
@@ -40,7 +41,18 @@ async function runRefresh() {
     }
   }
 
-  return { refreshed: true, ...out, at: new Date().toISOString() };
+  // Auto-import new HubSpot onboardings + backfill blank MRP date fields.
+  // Runs AFTER the snapshots above are rewritten so it reads this tick's fresh
+  // data. Both halves are internally gated by shouldAllowPoll (Session 15C).
+  let trackerSync: unknown = "error";
+  try {
+    trackerSync = await runTrackerImportSync("system@cron");
+    out.trackerSync = "ok";
+  } catch {
+    out.trackerSync = "error";
+  }
+
+  return { refreshed: true, ...out, trackerSync, at: new Date().toISOString() };
 }
 
 function authorized(req: NextRequest): boolean {
