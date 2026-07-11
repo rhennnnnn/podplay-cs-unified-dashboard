@@ -260,19 +260,29 @@ function distinctiveKey(name: string): string {
   return distinctiveTokens(name).sort().join("|");
 }
 
+// The 3-tier algorithm below is name-source agnostic: each tier takes a name, a
+// list of items, and a getName accessor. matchByCompanyNames wires it to
+// MrpRecord.club; other callers (e.g. lib/tracker-link.ts linking against
+// HubSpot onboarding names) reuse the SAME algorithm via matchNames + a getName
+// so there is exactly one fuzzy-match implementation in the codebase.
+// NOTE: scripts/verify-mrp-match.mjs mirrors this algorithm by hand — if the
+// TIER LOGIC (not this plumbing) changes, update it too.
+
+type NameGetter<T> = (item: T) => string | null | undefined;
+
 // Tier 1 — exact normalized equality (fast, unambiguous).
-function findExact(name: string, records: MrpRecord[]): MrpRecord | null {
+function findExact<T>(name: string, items: T[], getName: NameGetter<T>): T | null {
   const target = normalize(name);
   if (!target) return null;
-  return records.find((r) => normalize(r.club) === target) ?? null;
+  return items.find((it) => normalize(getName(it) ?? "") === target) ?? null;
 }
 
 // Tier 2 — full distinctive-token-set equality. Tolerates trailing
 // "Club"/"Pickleball" differences without substring false positives.
-function findTokenSet(name: string, records: MrpRecord[]): MrpRecord | null {
+function findTokenSet<T>(name: string, items: T[], getName: NameGetter<T>): T | null {
   const key = distinctiveKey(name);
   if (!key) return null;
-  return records.find((r) => distinctiveKey(r.club) === key) ?? null;
+  return items.find((it) => distinctiveKey(getName(it) ?? "") === key) ?? null;
 }
 
 // Tier 3 — distinctive-token SUBSET/superset. Matches when one name's tokens
@@ -283,11 +293,11 @@ function findTokenSet(name: string, records: MrpRecord[]): MrpRecord | null {
 // rather than guessing wrong. Token-subset ≠ raw substring, so it does NOT
 // reintroduce the Session 9 "Greystone" ⊂ "One+ Pickleball Club" false
 // positive ("greystone" and "one" share no token).
-function findTokenSubset(name: string, records: MrpRecord[]): MrpRecord | null {
+function findTokenSubset<T>(name: string, items: T[], getName: NameGetter<T>): T | null {
   const tokens = distinctiveTokens(name);
   if (tokens.length === 0) return null;
-  const matches = records.filter((r) => {
-    const rt = distinctiveTokens(r.club);
+  const matches = items.filter((it) => {
+    const rt = distinctiveTokens(getName(it) ?? "");
     if (rt.length === 0) return false;
     const [small, big] = tokens.length <= rt.length ? [tokens, rt] : [rt, tokens];
     const bigSet = new Set(big);
@@ -298,26 +308,36 @@ function findTokenSubset(name: string, records: MrpRecord[]): MrpRecord | null {
 
 const MATCH_TIERS = [findExact, findTokenSet, findTokenSubset];
 
-// Matches a set of candidate names (e.g. an onboarding's own name AND its
-// parent company's name) against the MRP sheet, tier-by-tier: every candidate
-// is tried at the strictest tier before any candidate falls to a looser one,
-// so a precise exact match on the specific onboarding name always beats a loose
-// subset match on a less-specific parent company. Returns the first hit.
-export function matchByCompanyNames(
+// Generic matcher: tries a set of candidate names against a labeled list,
+// tier-by-tier — every candidate is tried at the strictest tier before any
+// candidate falls to a looser one, so a precise exact match on the specific
+// name always beats a loose subset match on a less-specific candidate. Returns
+// the first hit.
+export function matchNames<T>(
   names: string | null | undefined | Array<string | null | undefined>,
-  records: MrpRecord[]
-): MrpRecord | null {
+  items: T[],
+  getName: NameGetter<T>
+): T | null {
   const candidates = (Array.isArray(names) ? names : [names]).filter(
     (n): n is string => Boolean(n && n.trim())
   );
   if (candidates.length === 0) return null;
   for (const tier of MATCH_TIERS) {
     for (const name of candidates) {
-      const hit = tier(name, records);
+      const hit = tier(name, items, getName);
       if (hit) return hit;
     }
   }
   return null;
+}
+
+// Matches a set of candidate names (e.g. an onboarding's own name AND its
+// parent company's name) against the MRP sheet's "Club" column.
+export function matchByCompanyNames(
+  names: string | null | undefined | Array<string | null | undefined>,
+  records: MrpRecord[]
+): MrpRecord | null {
+  return matchNames(names, records, (r) => r.club);
 }
 
 export function matchByCompanyName(

@@ -18,6 +18,18 @@ export interface Location {
   qc_date: string | null;
   csa_owner: string | null;
   hubspot_deal_id: string | null;
+  mrp_row_key: string | null;
+}
+
+export type FieldSyncSource = "tracker" | "hubspot" | "mrp";
+
+export interface LocationFieldSync {
+  location_id: string;
+  field_name: string;
+  source: FieldSyncSource;
+  source_updated_at: string;
+  value: string | null;
+  updated_at: string;
 }
 
 export type ActivityAction = "created" | "updated" | "deleted" | "opened";
@@ -128,6 +140,12 @@ export interface Database {
         Row: ActivityLogEntry;
         Insert: Partial<ActivityLogEntry>;
         Update: Partial<ActivityLogEntry>;
+        Relationships: [];
+      };
+      location_field_sync: {
+        Row: LocationFieldSync;
+        Insert: Partial<LocationFieldSync> & { location_id: string; field_name: string; source: FieldSyncSource; source_updated_at: string };
+        Update: Partial<LocationFieldSync>;
         Relationships: [];
       };
       readiness: {
