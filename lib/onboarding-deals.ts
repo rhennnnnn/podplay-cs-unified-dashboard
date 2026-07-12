@@ -12,11 +12,8 @@ import {
   batchReadAssociations,
   batchReadObjects,
   getLastEmail,
-  getStage,
-  getStageProgress,
   hubspotFetch,
   mapLimit,
-  tierToTrackerTier,
   type PipelineKey,
 } from "@/lib/hubspot";
 import type { PollTrigger } from "@/lib/api-health";
@@ -204,75 +201,6 @@ export async function refreshPipelineSnapshot(
   const fetchedAt = new Date().toISOString();
   await writeSnapshot(PIPELINE_SNAPSHOT_KEY[pipeline], built).catch(() => {});
   return { ...built, fetchedAt };
-}
-
-export interface UpcomingOpening {
-  id: string;
-  name: string;
-  tier: string;
-  openingDate: string; // ISO
-  readyPct: number; // stage progress used as a readiness proxy
-  status: "on-track" | "at-risk" | "delayed";
-}
-
-// Reads the onboarding snapshots (never a live HubSpot call) and returns the
-// non-closed openings falling inside a window around today, sorted soonest
-// first. Used by the Overview "Upcoming openings" panel. Readiness % is derived
-// from linear stage progress (the only per-deal completion signal available).
-export async function getUpcomingOpenings(
-  opts: { pastDays?: number; futureDays?: number; limit?: number } = {}
-): Promise<UpcomingOpening[]> {
-  const pastDays = opts.pastDays ?? 14;
-  const futureDays = opts.futureDays ?? 21;
-  const limit = opts.limit ?? 6;
-
-  const [basic, pro] = await Promise.all([
-    readSnapshot<PipelineDeals>(PIPELINE_SNAPSHOT_KEY.basic),
-    readSnapshot<PipelineDeals>(PIPELINE_SNAPSHOT_KEY.pro),
-  ]);
-  const deals = [...(basic?.data.deals ?? []), ...(pro?.data.deals ?? [])];
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const lowerBound = today.getTime() - pastDays * 86_400_000;
-  const upperBound = today.getTime() + futureDays * 86_400_000;
-  const weekOut = today.getTime() + 7 * 86_400_000;
-
-  const items: UpcomingOpening[] = [];
-  for (const d of deals) {
-    const p = d.properties;
-    if (!p.hs_pipeline || !p.hs_pipeline_stage) continue;
-    const stage = getStage(p.hs_pipeline, p.hs_pipeline_stage);
-    if (stage?.isClosed) continue; // completed/opened — not "upcoming"
-
-    const openingStr = p.grand_opening ?? p.anticipated_opening;
-    if (!openingStr) continue;
-    const target = new Date(openingStr);
-    if (Number.isNaN(target.getTime())) continue;
-    target.setHours(0, 0, 0, 0);
-    const t = target.getTime();
-    if (t < lowerBound || t > upperBound) continue;
-
-    const mia = stage?.label === "MIA/No Response";
-    const overdue = t < today.getTime();
-    const soon = !overdue && t <= weekOut;
-    const status: UpcomingOpening["status"] = overdue || mia ? "delayed" : soon ? "at-risk" : "on-track";
-
-    const prog = getStageProgress(p.hs_pipeline_stage, p.hs_pipeline);
-    const readyPct = Math.round((prog.current / prog.total) * 100);
-
-    items.push({
-      id: d.id,
-      name: p.hs_name ?? d.company?.name ?? "Untitled onboarding",
-      tier: tierToTrackerTier(p.podplay_tier),
-      openingDate: target.toISOString(),
-      readyPct,
-      status,
-    });
-  }
-
-  items.sort((a, b) => new Date(a.openingDate).getTime() - new Date(b.openingDate).getTime());
-  return items.slice(0, limit);
 }
 
 // In-memory filtering the read route applies over a pipeline snapshot.

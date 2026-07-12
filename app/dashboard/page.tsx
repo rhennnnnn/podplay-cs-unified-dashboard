@@ -12,11 +12,11 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { computeClientStats } from "@/lib/client-hub";
+import { computeClientStats, STATUS_LABEL } from "@/lib/client-hub";
 import { getOnboardingOverviewStats } from "@/lib/hubspot";
 import { getOpsGuideOverviewStats } from "@/lib/ops-guide-server";
-import { getUpcomingOpenings, type UpcomingOpening } from "@/lib/onboarding-deals";
 import { getCallerProfile, isAdmin } from "@/lib/permissions";
+import type { Location, LocationStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ApiHealthChip } from "@/components/api-health/api-health-chip";
 import { OpsGuideCard } from "@/components/overview/ops-guide-card";
@@ -68,26 +68,36 @@ function StatCard({ stat }: { stat: StatDef }) {
   );
 }
 
-const STATUS_PILL: Record<UpcomingOpening["status"], { label: string; className: string }> = {
-  "on-track": { label: "On track", className: "bg-emerald-600 text-white" },
-  "at-risk": { label: "At risk", className: "bg-amber-500 text-white" },
-  delayed: { label: "Delayed", className: "bg-destructive text-white" },
+interface UpcomingOpening {
+  id: string;
+  name: string;
+  tier: string | null;
+  openingDate: string; // ISO
+  readyPct: number;
+  status: LocationStatus;
+}
+
+const STATUS_PILL: Record<LocationStatus, string> = {
+  "on-track": "bg-emerald-600 text-white",
+  "at-risk": "bg-amber-500 text-white",
+  delayed: "bg-destructive text-white",
+  opened: "bg-blue-600 text-white",
 };
 
-const BAR_COLOR: Record<UpcomingOpening["status"], string> = {
+const BAR_COLOR: Record<LocationStatus, string> = {
   "on-track": "bg-emerald-600",
   "at-risk": "bg-amber-500",
   delayed: "bg-destructive",
+  opened: "bg-blue-600",
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function UpcomingRow({ item }: { item: UpcomingOpening }) {
   const d = new Date(item.openingDate);
-  const pill = STATUS_PILL[item.status];
   return (
     <Link
-      href={`/dashboard/onboarding?q=${encodeURIComponent(item.name)}`}
+      href={`/dashboard/clients?q=${encodeURIComponent(item.name)}`}
       className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/60"
     >
       <div className="w-11 shrink-0 text-center">
@@ -98,7 +108,7 @@ function UpcomingRow({ item }: { item: UpcomingOpening }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-foreground">{item.name}</div>
-        <div className="truncate text-xs text-muted-foreground">{item.tier}</div>
+        {item.tier && <div className="truncate text-xs text-muted-foreground">{item.tier}</div>}
       </div>
       <div className="hidden w-24 shrink-0 sm:block">
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -109,29 +119,69 @@ function UpcomingRow({ item }: { item: UpcomingOpening }) {
         </div>
         <div className="mt-1 text-[9.5px] text-muted-foreground">{item.readyPct}% ready</div>
       </div>
-      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold", pill.className)}>
-        {pill.label}
+      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold", STATUS_PILL[item.status])}>
+        {STATUS_LABEL[item.status]}
       </span>
     </Link>
   );
 }
 
+// Next-3-weeks tracker openings: opening_date within [today, today+21d], not
+// opened, not delayed. Readiness % comes from the readiness table. Sorted
+// soonest first. "Delayed"/overdue rows are intentionally excluded.
+function computeUpcomingOpenings(
+  locations: Location[],
+  readinessByLocation: Record<string, number>
+): UpcomingOpening[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const horizon = today.getTime() + 21 * 86_400_000;
+
+  return locations
+    .filter((l) => {
+      if (l.status === "opened" || l.status === "delayed") return false;
+      if (!l.opening_date) return false;
+      const d = new Date(l.opening_date);
+      if (Number.isNaN(d.getTime())) return false;
+      d.setHours(0, 0, 0, 0);
+      const t = d.getTime();
+      return t >= today.getTime() && t <= horizon;
+    })
+    .map((l) => ({
+      id: l.id,
+      name: l.client_name || l.name,
+      tier: l.tier,
+      openingDate: new Date(l.opening_date as string).toISOString(),
+      readyPct: readinessByLocation[l.id] ?? 0,
+      status: l.status,
+    }))
+    .sort((a, b) => new Date(a.openingDate).getTime() - new Date(b.openingDate).getTime())
+    .slice(0, 6);
+}
+
 export default async function OverviewPage() {
   const supabase = createClient();
   const admin = createAdminClient();
-  const [{ data: locations, error }, onboardingStats, opsGuideStats, upcoming, categoriesResp, callerProfile] =
+  const [{ data: locations, error }, { data: readinessRows }, onboardingStats, opsGuideStats, categoriesResp, callerProfile] =
     await Promise.all([
       supabase.from("locations").select("*"),
+      supabase.from("readiness").select("location_id, pct"),
       getOnboardingOverviewStats().catch(() => null),
       getOpsGuideOverviewStats().catch(() => null),
-      getUpcomingOpenings().catch(() => [] as UpcomingOpening[]),
       admin.from("ops_categories").select("name").order("display_order", { ascending: true }).limit(4),
       getCallerProfile(),
     ]);
   const callerIsAdmin = isAdmin(callerProfile);
 
-  const stats = computeClientStats(locations ?? []);
+  const rows = (locations ?? []) as unknown as Location[];
+  const stats = computeClientStats(rows);
   const quickTags = ((categoriesResp.data ?? []) as unknown as { name: string }[]).map((c) => c.name);
+
+  const readinessByLocation: Record<string, number> = {};
+  for (const r of (readinessRows ?? []) as unknown as { location_id: string; pct: number | null }[]) {
+    readinessByLocation[r.location_id] = r.pct ?? 0;
+  }
+  const upcoming = computeUpcomingOpenings(rows, readinessByLocation);
 
   const CLIENT_STATS: StatDef[] = [
     { label: "Active clients", value: stats.totalActive, icon: ClipboardList },
@@ -209,13 +259,13 @@ export default async function OverviewPage() {
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <div className="text-sm font-semibold text-foreground">Upcoming openings</div>
-              <div className="text-xs text-muted-foreground">HubSpot Onboarding · next 3 weeks</div>
+              <div className="text-xs text-muted-foreground">Client Opening Tracker · next 3 weeks</div>
             </div>
             <Link
-              href="/dashboard/onboarding"
+              href="/dashboard/clients"
               className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
             >
-              View board <ArrowRight className="h-3.5 w-3.5" />
+              View tracker <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
           <div className="flex-1 p-2">
