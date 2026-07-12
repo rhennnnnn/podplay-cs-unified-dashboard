@@ -29,7 +29,7 @@ export async function getOpsGuideOverviewStats(): Promise<OpsGuideOverviewStats>
 
   const topIds = Array.from(tally.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
+    .slice(0, 5)
     .map(([id]) => id);
 
   let mostViewed: MostViewedArticle[] = [];
