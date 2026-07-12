@@ -30,13 +30,11 @@ export default async function DashboardLayout({
   const isAdminUser = (profile as unknown as { role: string } | null)?.role === "admin";
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row [@media(min-height:768px)]:h-screen [@media(min-height:768px)]:overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden md:flex-row">
       <DashboardSidebar email={data.user.email ?? ""} isAdmin={isAdminUser} />
-      <div className="flex min-w-0 flex-1 flex-col [@media(min-height:768px)]:min-h-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <DashboardTopbar />
-        <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8 [@media(min-height:768px)]:min-h-0">
-          {children}
-        </main>
+        <main className="min-h-0 flex-1 overflow-y-auto bg-background p-4 md:p-8">{children}</main>
       </div>
     </div>
   );

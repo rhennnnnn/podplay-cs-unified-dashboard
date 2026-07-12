@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR, { preload } from "swr";
 import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
@@ -63,8 +64,10 @@ export function OnboardingGrid({
   const [pipeline, setPipeline] = React.useState<PipelineKey>("basic");
   const [owner, setOwner] = React.useState<string>("all");
   const [sortMode, setSortMode] = React.useState<SortMode>("recent");
-  const [searchInput, setSearchInput] = React.useState("");
-  const [search, setSearch] = React.useState("");
+  // Seed from the ?q deep-link (global search / cross-module jump), like ops-guide-shell.
+  const searchParams = useSearchParams();
+  const [searchInput, setSearchInput] = React.useState(() => searchParams.get("q") ?? "");
+  const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
   const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
   const [trackDeal, setTrackDeal] = React.useState<OnboardingListItem | null>(null);
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
@@ -308,7 +311,7 @@ export function OnboardingGrid({
                 placeholder="Search deal or contact…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
+                className="bg-muted/60 pl-8"
               />
             </div>
             <Select value={owner} onValueChange={setOwner}>
@@ -379,12 +382,12 @@ export function OnboardingGrid({
       {deals.length > 0 && (
         <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
           {columns.map(({ stage, deals: stageDeals }) => (
-            <div key={stage.id} className="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/30">
-              <div className="flex items-center justify-between border-b px-3 py-2.5">
-                <p className="truncate text-sm font-medium" title={stage.label}>
+            <div key={stage.id} className="flex w-72 shrink-0 flex-col rounded-xl border border-border bg-secondary/50 shadow-sm">
+              <div className="flex items-center justify-between rounded-t-xl border-b border-border bg-secondary px-3 py-2.5">
+                <p className="truncate text-sm font-semibold text-foreground" title={stage.label}>
                   {stage.label}
                 </p>
-                <Badge variant="secondary" className="shrink-0">
+                <Badge variant="secondary" className="shrink-0 bg-background/70">
                   {stageDeals.length}
                 </Badge>
               </div>

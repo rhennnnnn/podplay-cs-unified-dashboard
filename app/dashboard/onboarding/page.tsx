@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { createClient } from "@/lib/supabase/server";
 import { getIntegrationSettings } from "@/lib/api-health";
 import type { Profile } from "@/lib/types";
@@ -36,12 +38,14 @@ export default async function OnboardingPage() {
   const trackerName = profiles.find((p) => p.email === userEmail)?.first_name ?? "";
 
   return (
-    <OnboardingGrid
-      userEmail={userEmail}
-      trackerName={trackerName}
-      trackerRoster={trackerRoster}
-      trackedDealIds={trackedDealIds}
-      autoImportEnabled={autoImportEnabled}
-    />
+    <Suspense>
+      <OnboardingGrid
+        userEmail={userEmail}
+        trackerName={trackerName}
+        trackerRoster={trackerRoster}
+        trackedDealIds={trackedDealIds}
+        autoImportEnabled={autoImportEnabled}
+      />
+    </Suspense>
   );
 }
