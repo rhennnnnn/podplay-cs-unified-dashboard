@@ -149,7 +149,7 @@ function computeUpcomingOpenings(
     })
     .map((l) => ({
       id: l.id,
-      name: l.client_name || l.name,
+      name: l.name || l.client_name || "Untitled location",
       tier: l.tier,
       openingDate: new Date(l.opening_date as string).toISOString(),
       readyPct: readinessByLocation[l.id] ?? 0,
