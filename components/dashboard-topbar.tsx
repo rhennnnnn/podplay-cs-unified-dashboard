@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation";
 
+import { GlobalSearch } from "@/components/global-search";
+
 // Route -> page title/subtitle for the top app bar. Most specific paths first.
 const PAGES: { prefix: string; title: string; subtitle: string }[] = [
   {
@@ -43,9 +45,14 @@ export function DashboardTopbar() {
   if (!page) return null;
 
   return (
-    <header className="shrink-0 border-b border-border bg-card px-4 py-4 md:px-8">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">{page.title}</h1>
-      <p className="mt-0.5 text-sm text-muted-foreground">{page.subtitle}</p>
+    <header className="flex shrink-0 flex-col gap-3 border-b border-border bg-card px-4 py-4 md:flex-row md:items-center md:gap-4 md:px-8">
+      <div className="min-w-0 flex-1">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">{page.title}</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">{page.subtitle}</p>
+      </div>
+      <div className="md:w-72 md:shrink-0">
+        <GlobalSearch />
+      </div>
     </header>
   );
 }
