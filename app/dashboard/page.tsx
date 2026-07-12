@@ -1,47 +1,178 @@
 import Link from "next/link";
-import { ArrowRight, ClipboardList, AlertTriangle, CalendarClock, CheckCircle2, Link2, UserX, Clock3, BookOpen, Flame } from "lucide-react";
+import {
+  ArrowRight,
+  ClipboardList,
+  AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
+  Link2,
+  UserX,
+  Clock3,
+} from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { computeClientStats } from "@/lib/client-hub";
 import { getOnboardingOverviewStats } from "@/lib/hubspot";
 import { getOpsGuideOverviewStats } from "@/lib/ops-guide-server";
+import { getUpcomingOpenings, type UpcomingOpening } from "@/lib/onboarding-deals";
 import { getCallerProfile, isAdmin } from "@/lib/permissions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { ApiHealthChip } from "@/components/api-health/api-health-chip";
+import { OpsGuideCard } from "@/components/overview/ops-guide-card";
 
 export const dynamic = "force-dynamic";
 
+type Tone = "default" | "warning" | "danger";
+
+interface StatDef {
+  label: string;
+  value: number | string;
+  hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone?: Tone;
+}
+
+const TONE_CARD: Record<Tone, string> = {
+  default: "border-border bg-card",
+  warning: "border-amber-500/30 bg-amber-500/5",
+  danger: "border-destructive/30 bg-destructive/5",
+};
+
+const TONE_ICON: Record<Tone, string> = {
+  default: "bg-muted text-muted-foreground",
+  warning: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  danger: "bg-destructive/15 text-destructive",
+};
+
+const TONE_VALUE: Record<Tone, string> = {
+  default: "text-foreground",
+  warning: "text-amber-600 dark:text-amber-400",
+  danger: "text-destructive",
+};
+
+function StatCard({ stat }: { stat: StatDef }) {
+  const tone = stat.tone ?? "default";
+  const Icon = stat.icon;
+  return (
+    <div className={cn("rounded-xl border p-4 shadow-sm", TONE_CARD[tone])}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground">{stat.label}</span>
+        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", TONE_ICON[tone])}>
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+      <div className={cn("mt-2 text-3xl font-bold tracking-tight", TONE_VALUE[tone])}>{stat.value}</div>
+      {stat.hint && <div className="mt-0.5 text-xs font-medium text-muted-foreground">{stat.hint}</div>}
+    </div>
+  );
+}
+
+const STATUS_PILL: Record<UpcomingOpening["status"], { label: string; className: string }> = {
+  "on-track": { label: "On track", className: "bg-emerald-600 text-white" },
+  "at-risk": { label: "At risk", className: "bg-amber-500 text-white" },
+  delayed: { label: "Delayed", className: "bg-destructive text-white" },
+};
+
+const BAR_COLOR: Record<UpcomingOpening["status"], string> = {
+  "on-track": "bg-emerald-600",
+  "at-risk": "bg-amber-500",
+  delayed: "bg-destructive",
+};
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function UpcomingRow({ item }: { item: UpcomingOpening }) {
+  const d = new Date(item.openingDate);
+  const pill = STATUS_PILL[item.status];
+  return (
+    <Link
+      href={`/dashboard/onboarding?q=${encodeURIComponent(item.name)}`}
+      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/60"
+    >
+      <div className="w-11 shrink-0 text-center">
+        <div className="text-base font-bold leading-none text-foreground">
+          {String(d.getDate()).padStart(2, "0")}
+        </div>
+        <div className="text-[9.5px] font-semibold uppercase text-muted-foreground">{MONTHS[d.getMonth()]}</div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-foreground">{item.name}</div>
+        <div className="truncate text-xs text-muted-foreground">{item.tier}</div>
+      </div>
+      <div className="hidden w-24 shrink-0 sm:block">
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", BAR_COLOR[item.status])}
+            style={{ width: `${item.readyPct}%` }}
+          />
+        </div>
+        <div className="mt-1 text-[9.5px] text-muted-foreground">{item.readyPct}% ready</div>
+      </div>
+      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold", pill.className)}>
+        {pill.label}
+      </span>
+    </Link>
+  );
+}
+
 export default async function OverviewPage() {
   const supabase = createClient();
-  const [{ data: locations, error }, onboardingStats, opsGuideStats, callerProfile] = await Promise.all([
-    supabase.from("locations").select("*"),
-    getOnboardingOverviewStats().catch(() => null),
-    getOpsGuideOverviewStats().catch(() => null),
-    getCallerProfile(),
-  ]);
+  const admin = createAdminClient();
+  const [{ data: locations, error }, onboardingStats, opsGuideStats, upcoming, categoriesResp, callerProfile] =
+    await Promise.all([
+      supabase.from("locations").select("*"),
+      getOnboardingOverviewStats().catch(() => null),
+      getOpsGuideOverviewStats().catch(() => null),
+      getUpcomingOpenings().catch(() => [] as UpcomingOpening[]),
+      admin.from("ops_categories").select("name").order("display_order", { ascending: true }).limit(4),
+      getCallerProfile(),
+    ]);
   const callerIsAdmin = isAdmin(callerProfile);
 
   const stats = computeClientStats(locations ?? []);
+  const quickTags = ((categoriesResp.data ?? []) as unknown as { name: string }[]).map((c) => c.name);
 
-  const STATS = [
+  const CLIENT_STATS: StatDef[] = [
     { label: "Active clients", value: stats.totalActive, icon: ClipboardList },
-    { label: "At-risk openings", value: stats.atRisk, icon: AlertTriangle },
-    { label: "Follow-ups due", value: stats.followUpsOverdue, icon: CalendarClock },
+    {
+      label: "At-risk openings",
+      value: stats.atRisk,
+      hint: `${stats.openingThisWeek} opening this week`,
+      icon: AlertTriangle,
+      tone: stats.atRisk > 0 ? "warning" : "default",
+    },
+    {
+      label: "Follow-ups due",
+      value: stats.followUpsOverdue,
+      icon: CalendarClock,
+      tone: stats.followUpsOverdue > 0 ? "warning" : "default",
+    },
     { label: "Opened this month", value: stats.openedThisMonth, icon: CheckCircle2 },
   ];
 
-  const ONBOARDING_STATS = onboardingStats
+  const ONBOARDING_STATS: StatDef[] = onboardingStats
     ? [
-        { label: "Total onboardings", value: onboardingStats.total, icon: Link2 },
+        { label: "Total onboardings", value: onboardingStats.total, hint: "Basic+ & Pro+", icon: Link2 },
         { label: "Opening this week", value: onboardingStats.openingThisWeek, icon: Clock3 },
-        { label: "Overdue openings", value: onboardingStats.overdueOpenings, icon: AlertTriangle },
-        { label: "Stuck / MIA", value: onboardingStats.stuck, icon: UserX },
+        {
+          label: "Overdue openings",
+          value: onboardingStats.overdueOpenings,
+          icon: AlertTriangle,
+          tone: onboardingStats.overdueOpenings > 0 ? "warning" : "default",
+        },
+        {
+          label: "Stuck / MIA",
+          value: onboardingStats.stuck,
+          hint: "no response 14+ days",
+          icon: UserX,
+          tone: onboardingStats.stuck > 0 ? "danger" : "default",
+        },
       ]
     : [];
 
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {callerIsAdmin && (
         <div className="flex justify-end">
           <ApiHealthChip />
@@ -53,115 +184,60 @@ export default async function OverviewPage() {
           Failed to load stats: {error.message}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.label}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.label}
-                  </CardTitle>
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          {CLIENT_STATS.map((stat) => (
+            <StatCard key={stat.label} stat={stat} />
+          ))}
         </div>
       )}
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">HubSpot Onboarding</h2>
-          <p className="text-sm text-muted-foreground">Live snapshot across Basic(+) and Pro/Auto(+) pipelines.</p>
-        </div>
-        <Link href="/dashboard/onboarding" className="flex items-center gap-1 text-sm text-primary hover:underline">
-          View Board <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
 
       {onboardingStats === null ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load HubSpot stats — try refreshing.
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {ONBOARDING_STATS.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.label}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.label}
-                  </CardTitle>
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          {ONBOARDING_STATS.map((stat) => (
+            <StatCard key={stat.label} stat={stat} />
+          ))}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">OPS Guide</h2>
-          <p className="text-sm text-muted-foreground">Troubleshooting knowledge base at a glance.</p>
+      <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
+        {/* Upcoming openings */}
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold text-foreground">Upcoming openings</div>
+              <div className="text-xs text-muted-foreground">HubSpot Onboarding · next 3 weeks</div>
+            </div>
+            <Link
+              href="/dashboard/onboarding"
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              View board <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="flex-1 p-2">
+            {upcoming.length > 0 ? (
+              upcoming.map((item) => <UpcomingRow key={item.id} item={item} />)
+            ) : (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                No openings scheduled in the next 3 weeks.
+              </p>
+            )}
+          </div>
         </div>
-        <Link href="/dashboard/ops-guide" className="flex items-center gap-1 text-sm text-primary hover:underline">
-          Open Guide <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+
+        {/* OPS Guide */}
+        {opsGuideStats === null ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+            Failed to load OPS Guide stats — try refreshing.
+          </div>
+        ) : (
+          <OpsGuideCard mostViewed={opsGuideStats.mostViewed} quickTags={quickTags} />
+        )}
       </div>
-
-      {opsGuideStats === null ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-          Failed to load OPS Guide stats — try refreshing.
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Articles</CardTitle>
-              <BookOpen className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{opsGuideStats.totalArticles}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Most viewed (30d)</CardTitle>
-              <Flame className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {opsGuideStats.mostViewed.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {opsGuideStats.mostViewed.map((article, i) => (
-                    <li key={article.id}>
-                      <Link
-                        href={`/dashboard/ops-guide?article=${article.id}`}
-                        className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted"
-                      >
-                        <span className="truncate">
-                          {i + 1}. {article.title}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{article.count}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-2xl font-bold text-muted-foreground">—</div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }
