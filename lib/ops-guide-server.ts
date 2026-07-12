@@ -27,18 +27,25 @@ export async function getOpsGuideOverviewStats(): Promise<OpsGuideOverviewStats>
     tally.set(view.article_id, (tally.get(view.article_id) ?? 0) + 1);
   }
 
-  const topIds = Array.from(tally.entries())
+  // All viewed article ids, most-viewed first.
+  const rankedIds = Array.from(tally.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
     .map(([id]) => id);
 
   let mostViewed: MostViewedArticle[] = [];
-  if (topIds.length > 0) {
-    const { data: articles } = await supabase.from("ops_articles").select("id, title").in("id", topIds);
+  if (rankedIds.length > 0) {
+    // Only published articles are eligible — an article whose visibility was
+    // removed must not surface here. Filter to published, then take the top 5.
+    const { data: articles } = await supabase
+      .from("ops_articles")
+      .select("id, title")
+      .eq("published", true)
+      .in("id", rankedIds);
     const titleById = new Map(((articles ?? []) as { id: string; title: string }[]).map((a) => [a.id, a.title]));
-    mostViewed = topIds
-      .map((id) => ({ id, title: titleById.get(id), count: tally.get(id) ?? 0 }))
-      .filter((a): a is MostViewedArticle => Boolean(a.title));
+    mostViewed = rankedIds
+      .filter((id) => titleById.has(id))
+      .slice(0, 5)
+      .map((id) => ({ id, title: titleById.get(id)!, count: tally.get(id) ?? 0 }));
   }
 
   return { totalArticles: totalArticles ?? 0, mostViewed };
