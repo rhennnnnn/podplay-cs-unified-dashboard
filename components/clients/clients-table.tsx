@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import {
   type ColumnDef,
   type SortingState,
@@ -237,7 +238,9 @@ export function ClientsTable({
   const [statFilter, setStatFilter] = React.useState<StatKey | null>(null);
   const [expandShipped, setExpandShipped] = React.useState(false);
   const [expandDelivered, setExpandDelivered] = React.useState(false);
-  const [search, setSearch] = React.useState("");
+  // Seed from the ?q deep-link (global search / cross-module jump), like ops-guide-shell.
+  const searchParams = useSearchParams();
+  const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
   // Generic multi-select facet filters. Each holds the selected values for that
   // facet; empty = no constraint. OR within a facet, AND across facets.
   const [clientSel, setClientSel] = React.useState<string[]>([]);

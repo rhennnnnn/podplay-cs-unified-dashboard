@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { createClient } from "@/lib/supabase/server";
 import type { Location, Profile } from "@/lib/types";
 import { readSnapshot } from "@/lib/snapshot";
@@ -40,12 +42,14 @@ export default async function ClientHubPage() {
   }
 
   return (
-    <ClientsTable
-      initialLocations={rows}
-      userEmail={userData.user?.email ?? ""}
-      loginRoster={loginRoster}
-      rosterMap={rosterMap}
-      mrpByLocation={mrpByLocation}
-    />
+    <Suspense>
+      <ClientsTable
+        initialLocations={rows}
+        userEmail={userData.user?.email ?? ""}
+        loginRoster={loginRoster}
+        rosterMap={rosterMap}
+        mrpByLocation={mrpByLocation}
+      />
+    </Suspense>
   );
 }

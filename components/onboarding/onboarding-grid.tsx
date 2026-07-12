@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR, { preload } from "swr";
 import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
@@ -63,8 +64,10 @@ export function OnboardingGrid({
   const [pipeline, setPipeline] = React.useState<PipelineKey>("basic");
   const [owner, setOwner] = React.useState<string>("all");
   const [sortMode, setSortMode] = React.useState<SortMode>("recent");
-  const [searchInput, setSearchInput] = React.useState("");
-  const [search, setSearch] = React.useState("");
+  // Seed from the ?q deep-link (global search / cross-module jump), like ops-guide-shell.
+  const searchParams = useSearchParams();
+  const [searchInput, setSearchInput] = React.useState(() => searchParams.get("q") ?? "");
+  const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
   const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
   const [trackDeal, setTrackDeal] = React.useState<OnboardingListItem | null>(null);
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
