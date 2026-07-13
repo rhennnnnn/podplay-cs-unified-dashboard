@@ -6,6 +6,7 @@ import {
   EMAIL_DIRECTION_LABEL,
   formatDateWithRelative,
   formatRelativeTime,
+  getEffectiveOpeningDate,
   getLastEmailUrgency,
   TIER_LABEL,
   type HubspotOwner,
@@ -36,7 +37,7 @@ interface OnboardingCardProps {
 // is what makes a full board of ~90 cards render without hammering rate limits.
 export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }: OnboardingCardProps) {
   const { properties } = deal;
-  const closeDate = formatDateWithRelative(properties.grand_opening ?? properties.anticipated_opening);
+  const closeDate = formatDateWithRelative(getEffectiveOpeningDate(properties));
   const urgency = getLastEmailUrgency(deal.lastEmail, stageIsClosed);
 
   return (

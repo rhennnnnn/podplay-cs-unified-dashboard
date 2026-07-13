@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ColumnDef,
   type SortingState,
@@ -240,6 +240,7 @@ export function ClientsTable({
   const [expandDelivered, setExpandDelivered] = React.useState(false);
   // Seed from the ?q deep-link (global search / cross-module jump), like ops-guide-shell.
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
   // Generic multi-select facet filters. Each holds the selected values for that
   // facet; empty = no constraint. OR within a facet, AND across facets.
@@ -705,6 +706,22 @@ export function ClientsTable({
             >
               View details
             </DropdownMenuItem>
+            {row.original.hubspot_deal_id ? (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/dashboard/onboarding?deal=${row.original.hubspot_deal_id}`);
+                }}
+              >
+                <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                Open in Onboarding
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem disabled>
+                <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                Not linked to HubSpot
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();

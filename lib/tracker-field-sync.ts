@@ -32,7 +32,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSnapshot } from "@/lib/snapshot";
 import { shouldAllowAutoImport } from "@/lib/api-health";
-import { tierToTrackerTier } from "@/lib/hubspot";
+import { tierToTrackerTier, getEffectiveOpeningDate } from "@/lib/hubspot";
 import { SHARED_FIELDS } from "@/lib/tracker-link";
 import { toIsoDate } from "@/lib/track-opening-map";
 import { parseFlexDate, isNa } from "@/lib/tracker-mrp";
@@ -104,7 +104,7 @@ function observeField(
   if (allowHubspot && deal) {
     const ts = deal.properties.hs_lastmodifieddate || dealFetchedAt;
     if (field === "opening_date") {
-      const v = toIsoDate(deal.properties.grand_opening ?? deal.properties.anticipated_opening) || null;
+      const v = toIsoDate(getEffectiveOpeningDate(deal.properties)) || null;
       if (v) obs.hs = { value: v, ts };
     } else if (field === "tier") {
       // tierToTrackerTier maps null -> "Basic (+)"; don't fabricate that as an

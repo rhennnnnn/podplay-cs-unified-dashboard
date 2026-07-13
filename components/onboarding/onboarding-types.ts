@@ -94,6 +94,8 @@ export interface MrpJoinedResponse {
 export interface OnboardingSyncRefreshResponse {
   hubspot: "ran" | "skipped" | "error";
   mrp: "ran" | "skipped" | "error";
+  // Field-level LWW sync run as part of the refresh (17A). null if it errored.
+  fieldSync: { overwritten: number; fieldsChanged: number } | null;
   nextRefreshAllowedAt: string | null;
 }
 

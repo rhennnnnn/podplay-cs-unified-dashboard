@@ -3,7 +3,7 @@
 // and the hourly auto-import (lib/tracker-sync.ts, Session 15B) so the mapping
 // lives in exactly one place. Pure — safe to import from client or server.
 
-import { tierToTrackerTier, getPipelineById } from "@/lib/hubspot";
+import { tierToTrackerTier, getPipelineById, getEffectiveOpeningDate } from "@/lib/hubspot";
 import type { LocationStatus } from "@/lib/types";
 import type { OnboardingListItem } from "@/components/onboarding/onboarding-types";
 
@@ -57,6 +57,6 @@ export function mapOnboardingToLocation(deal: OnboardingListItem): MappedOnboard
     client_name: deal.company?.name ?? null,
     name,
     tier: tierToTrackerTier(deal.properties.podplay_tier),
-    opening_date: toIsoDate(deal.properties.grand_opening ?? deal.properties.anticipated_opening) || null,
+    opening_date: toIsoDate(getEffectiveOpeningDate(deal.properties)) || null,
   };
 }
