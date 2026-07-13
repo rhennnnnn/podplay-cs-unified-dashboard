@@ -68,7 +68,11 @@ export function OnboardingGrid({
   const searchParams = useSearchParams();
   const [searchInput, setSearchInput] = React.useState(() => searchParams.get("q") ?? "");
   const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
-  const [selectedDealId, setSelectedDealId] = React.useState<string | null>(null);
+  // Seed from the ?deal deep-link (e.g. the tracker row's "Open in Onboarding"
+  // button) so the detail sheet for that record opens on load — same lazy-init
+  // pattern as ops-guide-shell's ?article handling. The sheet fetches full
+  // detail by id, so this works even when the deal is in the non-default pipeline.
+  const [selectedDealId, setSelectedDealId] = React.useState<string | null>(() => searchParams.get("deal"));
   const [trackDeal, setTrackDeal] = React.useState<OnboardingListItem | null>(null);
   const [trackedIds, setTrackedIds] = React.useState(initialTracked);
   const [, forceTick] = React.useState(0);
@@ -221,6 +225,12 @@ export function OnboardingGrid({
       // The sync route already rebuilt the snapshot server-side — revalidate so
       // the board (and its "Updated X ago") reflects the just-written snapshot.
       await mutate();
+      // Surface any tracker dates the field-sync just pulled through, so a CSA
+      // refresh that catches a HubSpot/MRP change isn't a silent no-op.
+      const synced = json.fieldSync?.overwritten ?? 0;
+      if (synced > 0) {
+        toast.success(`Refreshed — ${synced} tracker ${synced === 1 ? "record" : "records"} synced from HubSpot/MRP.`);
+      }
     } catch {
       toast.error("Refresh failed.");
     } finally {
