@@ -5,6 +5,7 @@ import { shouldAllowPoll } from "@/lib/api-health";
 import { type PipelineKey } from "@/lib/hubspot";
 import { refreshPipelineSnapshot } from "@/lib/onboarding-deals";
 import { getCombinedNextRefreshAllowedAt, runOnboardingSync } from "@/lib/onboarding-sync";
+import { runFieldSync } from "@/lib/tracker-field-sync";
 
 export const dynamic = "force-dynamic";
 // maxDuration is honored on paid Vercel plans; the production project is on
@@ -53,11 +54,28 @@ export async function POST(request: NextRequest) {
 
   const [hubspotOutcome, syncOutcome] = await Promise.all([hubspotTask, runOnboardingSync("manual")]);
 
+  // Field-level last-write-wins sync (Session 15D) over the snapshots the two
+  // tasks above just rewrote. Wired in here (17A) so a CSA clicking Refresh
+  // pulls genuine HubSpot/MRP date changes into the tracker — previously this
+  // only happened on the hourly cron, so a fresh HubSpot edit didn't reflect in
+  // the tracker until the next tick. runFieldSync self-gates on
+  // shouldAllowAutoImport (hubspot / mrp_sheets) and caps its own writes/tick,
+  // so it respects the same pause state and Vercel duration budget as the cron.
+  const actorEmail = data.user.email ?? "system@refresh";
+  let fieldSync: { overwritten: number; fieldsChanged: number } | null = null;
+  try {
+    const r = await runFieldSync(actorEmail);
+    fieldSync = { overwritten: r.overwritten, fieldsChanged: r.fieldsChanged };
+  } catch (err) {
+    console.error("[onboarding-sync/refresh] field sync failed:", err);
+  }
+
   const nextRefreshAllowedAt = await getCombinedNextRefreshAllowedAt();
 
   return NextResponse.json({
     hubspot: hubspotOutcome,
     mrp: syncOutcome.mrp,
+    fieldSync,
     nextRefreshAllowedAt,
   });
 }
