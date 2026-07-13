@@ -297,6 +297,17 @@ export interface OnboardingOverviewStats {
   openingThisWeek: number;
 }
 
+// Effective opening date for an onboarding: the grand (confirmed) opening wins
+// when populated, else the anticipated opening. Single source of truth for the
+// precedence used by the board card's displayed date, the overview stats, and
+// what syncs to the tracker's opening_date — keep every call site pointed here.
+export function getEffectiveOpeningDate(properties: {
+  grand_opening?: string | null;
+  anticipated_opening?: string | null;
+}): string | null {
+  return properties.grand_opening ?? properties.anticipated_opening ?? null;
+}
+
 interface OverviewSearchResult {
   results: {
     properties: {
@@ -353,7 +364,7 @@ async function fetchOnboardingOverviewStats(): Promise<OnboardingOverviewStats> 
       }
       if (stage?.isClosed) continue;
 
-      const openingDate = r.properties.grand_opening ?? r.properties.anticipated_opening;
+      const openingDate = getEffectiveOpeningDate(r.properties);
       if (!openingDate) continue;
       const target = new Date(openingDate);
       target.setHours(0, 0, 0, 0);
