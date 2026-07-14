@@ -94,6 +94,13 @@ export interface MrpJoinedResponse {
 export interface OnboardingSyncRefreshResponse {
   hubspot: "ran" | "skipped" | "error";
   mrp: "ran" | "skipped" | "error";
+  // Auto-import sweep run as part of the refresh (17B). null if it errored.
+  importSync: {
+    imported: number;
+    importScanned: number;
+    importCapped: boolean;
+    importSkippedPaused: boolean;
+  } | null;
   // Field-level LWW sync run as part of the refresh (17A). null if it errored.
   fieldSync: { overwritten: number; fieldsChanged: number } | null;
   nextRefreshAllowedAt: string | null;

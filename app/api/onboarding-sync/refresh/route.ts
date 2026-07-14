@@ -5,6 +5,7 @@ import { shouldAllowPoll } from "@/lib/api-health";
 import { type PipelineKey } from "@/lib/hubspot";
 import { refreshPipelineSnapshot } from "@/lib/onboarding-deals";
 import { getCombinedNextRefreshAllowedAt, runOnboardingSync } from "@/lib/onboarding-sync";
+import { runTrackerImportSync } from "@/lib/tracker-sync";
 import { runFieldSync } from "@/lib/tracker-field-sync";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,35 @@ export async function POST(request: NextRequest) {
 
   const [hubspotOutcome, syncOutcome] = await Promise.all([hubspotTask, runOnboardingSync("manual")]);
 
+  const actorEmail = data.user.email ?? "system@refresh";
+
+  // Auto-import sweep (Session 15B) over the snapshots just rewritten above —
+  // wired in here (17B) so clicking Refresh pulls a brand-new HubSpot onboarding
+  // into the tracker, matching the hourly cron. Previously only the cron and the
+  // per-record "Import Now" button created `locations` rows, so a CSA who
+  // refreshed expecting a new record to appear got a silent no-op. Same function
+  // the cron uses; it self-gates on shouldAllowAutoImport (hubspot / mrp_sheets)
+  // and caps its writes at 25/tick, so it respects the same pause state and
+  // Vercel Hobby duration budget. Runs BEFORE field-sync, matching cron order
+  // (import/backfill, then last-write-wins over the fresh rows).
+  let importSync: {
+    imported: number;
+    importScanned: number;
+    importCapped: boolean;
+    importSkippedPaused: boolean;
+  } | null = null;
+  try {
+    const r = await runTrackerImportSync(actorEmail);
+    importSync = {
+      imported: r.imported,
+      importScanned: r.importScanned,
+      importCapped: r.importCapped,
+      importSkippedPaused: r.importSkippedPaused,
+    };
+  } catch (err) {
+    console.error("[onboarding-sync/refresh] tracker import sync failed:", err);
+  }
+
   // Field-level last-write-wins sync (Session 15D) over the snapshots the two
   // tasks above just rewrote. Wired in here (17A) so a CSA clicking Refresh
   // pulls genuine HubSpot/MRP date changes into the tracker — previously this
@@ -61,7 +91,6 @@ export async function POST(request: NextRequest) {
   // the tracker until the next tick. runFieldSync self-gates on
   // shouldAllowAutoImport (hubspot / mrp_sheets) and caps its own writes/tick,
   // so it respects the same pause state and Vercel duration budget as the cron.
-  const actorEmail = data.user.email ?? "system@refresh";
   let fieldSync: { overwritten: number; fieldsChanged: number } | null = null;
   try {
     const r = await runFieldSync(actorEmail);
@@ -75,6 +104,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     hubspot: hubspotOutcome,
     mrp: syncOutcome.mrp,
+    importSync,
     fieldSync,
     nextRefreshAllowedAt,
   });
