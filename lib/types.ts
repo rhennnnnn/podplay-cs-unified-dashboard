@@ -67,6 +67,7 @@ export interface Profile {
   role: ProfileRole;
   created_by: string | null;
   created_at: string;
+  last_active_at: string | null;
 }
 
 export type ApiIntegrationStatus = "active" | "unresponsive" | "broken" | "down" | "not_configured" | "access_pending";
