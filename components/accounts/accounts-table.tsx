@@ -171,7 +171,7 @@ export function AccountsTable({ initialAccounts, currentProfileId, isAdmin }: Ac
                       </td>
                       <td className="pp-muted">{account.created_by ?? "—"}</td>
                       <td className="pp-seen">
-                        {account.last_sign_in_at ? formatRelativeTime(account.last_sign_in_at) : "never"}
+                        {account.last_seen_at ? formatRelativeTime(account.last_seen_at) : "never"}
                       </td>
                       <td>
                         <div className="pp-actions">
@@ -220,7 +220,7 @@ export function AccountsTable({ initialAccounts, currentProfileId, isAdmin }: Ac
         open={createOpen}
         onOpenChange={setCreateOpen}
         isAdmin={isAdmin}
-        onCreated={(account) => upsert({ ...account, last_sign_in_at: null, hasProfile: true })}
+        onCreated={(account) => upsert({ ...account, last_sign_in_at: null, last_seen_at: null, hasProfile: true })}
       />
 
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
@@ -230,7 +230,13 @@ export function AccountsTable({ initialAccounts, currentProfileId, isAdmin }: Ac
         onOpenChange={(v) => !v && setEditTarget(null)}
         account={editTarget}
         canEditRole={isAdmin}
-        onSaved={(account) => upsert({ ...account, last_sign_in_at: editTarget?.last_sign_in_at ?? null })}
+        onSaved={(account) =>
+          upsert({
+            ...account,
+            last_sign_in_at: editTarget?.last_sign_in_at ?? null,
+            last_seen_at: editTarget?.last_seen_at ?? null,
+          })
+        }
       />
 
       <DeleteAccountDialog

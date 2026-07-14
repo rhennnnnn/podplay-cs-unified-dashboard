@@ -31,6 +31,7 @@ export default async function AccountsPage() {
         created_by: p.created_by,
         created_at: p.created_at,
         last_sign_in_at: null,
+        last_seen_at: p.last_active_at ?? null,
         hasProfile: true,
       }))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
