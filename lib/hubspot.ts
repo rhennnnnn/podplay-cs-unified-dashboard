@@ -9,6 +9,7 @@
 // re-fetched on every request.
 
 import { IntegrationPausedError, markRefreshed, recordCall, shouldAllowPoll, type PollTrigger } from "@/lib/api-health";
+import { parseDateOnly, dateOnlyToUtcMs, todayUtcMs } from "@/lib/date-only";
 
 export const ONBOARDING_OBJECT_TYPE = "0-162";
 
@@ -218,8 +219,8 @@ export function formatRelativeTime(iso: string): string {
 }
 
 export function formatDateWithRelative(dateStr: string | null): { absolute: string; overdue: boolean } | null {
-  if (!dateStr) return null;
-  const target = new Date(dateStr);
+  const target = parseDateOnly(dateStr);
+  if (!target) return null;
   const today = new Date();
   target.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
@@ -331,9 +332,11 @@ export async function getOnboardingOverviewStats(): Promise<OnboardingOverviewSt
 
 async function fetchOnboardingOverviewStats(): Promise<OnboardingOverviewStats> {
   const stats: OnboardingOverviewStats = { total: 0, stuck: 0, overdueOpenings: 0, openingThisWeek: 0 };
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weekFromNow = new Date(today.getTime() + 7 * 86_400_000);
+  // Runs in a Next.js server component, so "today" would otherwise be the Vercel
+  // runtime's timezone (UTC). Compare entirely in UTC-normalized date-only terms
+  // so the 7-day bucketing is correct regardless of the server process TZ.
+  const today = todayUtcMs();
+  const weekFromNow = today + 7 * 86_400_000;
 
   let after: string | undefined;
   const MAX_PAGES = 10;
@@ -365,11 +368,10 @@ async function fetchOnboardingOverviewStats(): Promise<OnboardingOverviewStats> 
       if (stage?.isClosed) continue;
 
       const openingDate = getEffectiveOpeningDate(r.properties);
-      if (!openingDate) continue;
-      const target = new Date(openingDate);
-      target.setHours(0, 0, 0, 0);
-      if (target.getTime() < today.getTime()) stats.overdueOpenings++;
-      else if (target.getTime() <= weekFromNow.getTime()) stats.openingThisWeek++;
+      const target = dateOnlyToUtcMs(openingDate);
+      if (target === null) continue;
+      if (target < today) stats.overdueOpenings++;
+      else if (target <= weekFromNow) stats.openingThisWeek++;
     }
 
     after = data.paging?.next?.after;
