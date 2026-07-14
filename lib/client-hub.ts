@@ -1,4 +1,5 @@
 import type { Location, LocationStatus } from "@/lib/types";
+import { parseDateOnly } from "@/lib/date-only";
 
 export const STATUS_LABEL: Record<LocationStatus, string> = {
   "on-track": "On Track",
@@ -16,7 +17,8 @@ export const STATUS_BADGE_VARIANT: Record<LocationStatus, "default" | "amber" | 
 
 export function isFollowUpOverdue(location: Location): boolean {
   if (location.status === "opened" || !location.opening_date) return false;
-  const opening = new Date(location.opening_date);
+  const opening = parseDateOnly(location.opening_date);
+  if (!opening) return false;
   const today = new Date();
   opening.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
@@ -27,7 +29,8 @@ export function isFollowUpOverdue(location: Location): boolean {
 // This calendar week, Monday–Sunday (not a rolling 7-day window).
 export function isOpeningThisWeek(location: Location): boolean {
   if (location.status === "opened" || !location.opening_date) return false;
-  const opening = new Date(location.opening_date);
+  const opening = parseDateOnly(location.opening_date);
+  if (!opening) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   opening.setHours(0, 0, 0, 0);
@@ -41,7 +44,8 @@ export function isOpeningThisWeek(location: Location): boolean {
 
 export function isOpenedThisMonth(location: Location): boolean {
   if (location.status !== "opened" || !location.opened_date) return false;
-  const opened = new Date(location.opened_date);
+  const opened = parseDateOnly(location.opened_date);
+  if (!opened) return false;
   const today = new Date();
   return opened.getFullYear() === today.getFullYear() && opened.getMonth() === today.getMonth();
 }
@@ -57,8 +61,9 @@ export function computeClientStats(locations: Location[]) {
 }
 
 export function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  const target = parseDateOnly(dateStr);
+  if (!target) return "—";
+  return target.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -66,8 +71,8 @@ export function formatDate(dateStr: string | null): string {
 }
 
 export function formatRelativeDays(dateStr: string | null): string | null {
-  if (!dateStr) return null;
-  const target = new Date(dateStr);
+  const target = parseDateOnly(dateStr);
+  if (!target) return null;
   const today = new Date();
   target.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);

@@ -9,6 +9,8 @@
 //   more than 3 days past    -> "overdue"  (red — existing base behavior)
 //   more than 7 days out     -> null       (no alert styling yet)
 
+import { parseDateOnly } from "@/lib/date-only";
+
 export type OpeningDateTier = "upcoming" | "today" | "late" | "overdue" | null;
 
 export function getOpeningDateTier(
@@ -17,8 +19,8 @@ export function getOpeningDateTier(
 ): OpeningDateTier {
   if (completed || !openingDate) return null;
 
-  const opening = new Date(openingDate);
-  if (Number.isNaN(opening.getTime())) return null;
+  const opening = parseDateOnly(openingDate);
+  if (!opening) return null;
 
   const today = new Date();
   opening.setHours(0, 0, 0, 0);

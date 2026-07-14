@@ -16,6 +16,7 @@ import { computeClientStats, STATUS_LABEL } from "@/lib/client-hub";
 import { getOnboardingOverviewStats } from "@/lib/hubspot";
 import { getOpsGuideOverviewStats } from "@/lib/ops-guide-server";
 import { getCallerProfile, isAdmin } from "@/lib/permissions";
+import { parseDateOnly, dateOnlyToUtcMs, todayUtcMs } from "@/lib/date-only";
 import type { Location, LocationStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ApiHealthChip } from "@/components/api-health/api-health-chip";
@@ -94,7 +95,9 @@ const BAR_COLOR: Record<LocationStatus, string> = {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function UpcomingRow({ item }: { item: UpcomingOpening }) {
-  const d = new Date(item.openingDate);
+  // item.openingDate is a date-only string ("2026-08-01"); parse at local
+  // midnight so getDate()/getMonth() render the intended calendar day.
+  const d = parseDateOnly(item.openingDate) ?? new Date(item.openingDate);
   return (
     <Link
       href={`/dashboard/clients?q=${encodeURIComponent(item.name)}`}
@@ -133,29 +136,28 @@ function computeUpcomingOpenings(
   locations: Location[],
   readinessByLocation: Record<string, number>
 ): UpcomingOpening[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const horizon = today.getTime() + 21 * 86_400_000;
+  // Runs server-side (force-dynamic Overview page), so compare in UTC-normalized
+  // date-only terms rather than against a server-clock local midnight.
+  const today = todayUtcMs();
+  const horizon = today + 21 * 86_400_000;
 
   return locations
     .filter((l) => {
       if (l.status === "opened" || l.status === "delayed") return false;
       if (!l.opening_date) return false;
-      const d = new Date(l.opening_date);
-      if (Number.isNaN(d.getTime())) return false;
-      d.setHours(0, 0, 0, 0);
-      const t = d.getTime();
-      return t >= today.getTime() && t <= horizon;
+      const t = dateOnlyToUtcMs(l.opening_date);
+      if (t === null) return false;
+      return t >= today && t <= horizon;
     })
     .map((l) => ({
       id: l.id,
       name: l.name || l.client_name || "Untitled location",
       tier: l.tier,
-      openingDate: new Date(l.opening_date as string).toISOString(),
+      openingDate: l.opening_date as string,
       readyPct: readinessByLocation[l.id] ?? 0,
       status: l.status,
     }))
-    .sort((a, b) => new Date(a.openingDate).getTime() - new Date(b.openingDate).getTime())
+    .sort((a, b) => (dateOnlyToUtcMs(a.openingDate) ?? 0) - (dateOnlyToUtcMs(b.openingDate) ?? 0))
     .slice(0, 6);
 }
 
