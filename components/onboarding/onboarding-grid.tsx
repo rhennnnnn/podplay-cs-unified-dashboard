@@ -225,11 +225,21 @@ export function OnboardingGrid({
       // The sync route already rebuilt the snapshot server-side — revalidate so
       // the board (and its "Updated X ago") reflects the just-written snapshot.
       await mutate();
-      // Surface any tracker dates the field-sync just pulled through, so a CSA
-      // refresh that catches a HubSpot/MRP change isn't a silent no-op.
+      // Surface what the refresh actually changed in the tracker, so a CSA
+      // refresh that catches a new onboarding (17B) or a HubSpot/MRP date change
+      // (17A) isn't a silent no-op. Import count leads (it's the new-record
+      // signal the user is usually waiting on); field-sync count follows.
+      const imported = json.importSync?.imported ?? 0;
       const synced = json.fieldSync?.overwritten ?? 0;
+      const parts: string[] = [];
+      if (imported > 0) {
+        parts.push(`${imported} new ${imported === 1 ? "onboarding" : "onboardings"} imported`);
+      }
       if (synced > 0) {
-        toast.success(`Refreshed — ${synced} tracker ${synced === 1 ? "record" : "records"} synced from HubSpot/MRP.`);
+        parts.push(`${synced} ${synced === 1 ? "record" : "records"} synced from HubSpot/MRP`);
+      }
+      if (parts.length > 0) {
+        toast.success(`Refreshed — ${parts.join(", ")}.`);
       }
     } catch {
       toast.error("Refresh failed.");
