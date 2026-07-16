@@ -105,6 +105,9 @@ export interface OnboardingSyncRefreshResponse {
   // Field-level LWW sync run as part of the refresh (17A). null if it errored.
   fieldSync: { overwritten: number; fieldsChanged: number } | null;
   nextRefreshAllowedAt: string | null;
+  // Per-stage wall-clock (17E) — surfaced for diagnosing timeout risk against
+  // Vercel Hobby's 10s cap. Present on a successful response.
+  timingMs?: { snapshot: number; import: number; field: number; total: number };
 }
 
 export interface ActivityResponse {

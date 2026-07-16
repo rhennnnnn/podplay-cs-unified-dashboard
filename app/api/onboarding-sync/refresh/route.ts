@@ -13,9 +13,28 @@ export const dynamic = "force-dynamic";
 // Hobby (hard 10s cap regardless of this value). The manual refresh is kept
 // under that cap by (a) rebuilding ONLY the viewed pipeline, (b) reusing the
 // prior snapshot's enrichment so the HubSpot rebuild is a single search call
-// (see refreshPipelineSnapshot), and (c) running the HubSpot and MRP refreshes
-// concurrently below rather than back-to-back.
+// (see refreshPipelineSnapshot), (c) running the HubSpot and MRP refreshes
+// concurrently below rather than back-to-back, and (d) 17E — capping the import
+// sweep and field-sync at a LOWER per-tick write budget than the hourly cron, so
+// a single user click always finishes well under 10s even under heavy backlog
+// (the remainder drains on the next cron tick, both are idempotent).
 export const maxDuration = 60;
+
+// 17E — per-tick write budget for the MANUAL refresh path only. The hourly cron
+// keeps its own 25/tick default (it has a full hour to drain a backlog); a user
+// click has ~10s, so it takes a smaller bite and lets cron catch up the rest.
+// Worst case here: ~10 import writes + ~10 field-sync writes, each 2 DB round
+// trips (UPDATE + activity_log), plus the HubSpot search — comfortably under cap.
+const MANUAL_REFRESH_MAX_WRITES = 10;
+
+// Stage timing: this route has accumulated sequential stages across 17A/17B/17D,
+// and a platform timeout kills the function with NO response, so a silent slow
+// refresh was previously undiagnosable. Log each stage's wall-clock (always, not
+// just on error) so a future timeout regression is measurable in Vercel logs
+// without redeploying instrumentation. Cheap: one console line per refresh.
+function ms(start: number): number {
+  return Math.round(performance.now() - start);
+}
 
 // POST — server-only. The Onboarding board's Refresh button calls this instead
 // of hitting HubSpot directly, so one click refreshes both HubSpot and MRP,
@@ -37,6 +56,7 @@ export async function POST(request: NextRequest) {
   // HubSpot rebuild and MRP refresh are independent — run them concurrently so
   // total wall-clock is max(hubspot, mrp), not their sum. Sequential execution
   // was part of what pushed Pro/Auto past the Hobby 10s cap.
+  const t0 = performance.now();
   const hubspotTask = (async (): Promise<"ran" | "skipped" | "error"> => {
     try {
       if (!(await shouldAllowPoll("hubspot", "manual"))) return "skipped";
@@ -54,6 +74,7 @@ export async function POST(request: NextRequest) {
   })();
 
   const [hubspotOutcome, syncOutcome] = await Promise.all([hubspotTask, runOnboardingSync("manual")]);
+  const snapshotMs = ms(t0);
 
   const actorEmail = data.user.email ?? "system@refresh";
 
@@ -66,6 +87,15 @@ export async function POST(request: NextRequest) {
   // and caps its writes at 25/tick, so it respects the same pause state and
   // Vercel Hobby duration budget. Runs BEFORE field-sync, matching cron order
   // (import/backfill, then last-write-wins over the fresh rows).
+  //
+  // 17E — import sweep and field-sync stay SEQUENTIAL (not Promise.all'd like the
+  // HubSpot+MRP pair). They share mutable state: both read `locations` (SELECT *)
+  // and both UPDATE it, and they overlap on the same fields (import Part B
+  // backfills blank opening_date/delivery_date; field-sync also writes those).
+  // Running them concurrently would (a) race UPDATEs on the same row+field and
+  // (b) let field-sync's SELECT miss rows the import just inserted. Latency is
+  // instead bounded by the lower per-tick write cap below, not by parallelizing.
+  const tImport = performance.now();
   let importSync: {
     imported: number;
     importScanned: number;
@@ -73,7 +103,7 @@ export async function POST(request: NextRequest) {
     importSkippedPaused: boolean;
   } | null = null;
   try {
-    const r = await runTrackerImportSync(actorEmail);
+    const r = await runTrackerImportSync(actorEmail, MANUAL_REFRESH_MAX_WRITES);
     importSync = {
       imported: r.imported,
       importScanned: r.importScanned,
@@ -83,6 +113,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[onboarding-sync/refresh] tracker import sync failed:", err);
   }
+  const importMs = ms(tImport);
 
   // Field-level last-write-wins sync (Session 15D) over the snapshots the two
   // tasks above just rewrote. Wired in here (17A) so a CSA clicking Refresh
@@ -91,15 +122,25 @@ export async function POST(request: NextRequest) {
   // the tracker until the next tick. runFieldSync self-gates on
   // shouldAllowAutoImport (hubspot / mrp_sheets) and caps its own writes/tick,
   // so it respects the same pause state and Vercel duration budget as the cron.
+  const tField = performance.now();
   let fieldSync: { overwritten: number; fieldsChanged: number } | null = null;
   try {
-    const r = await runFieldSync(actorEmail);
+    const r = await runFieldSync(actorEmail, MANUAL_REFRESH_MAX_WRITES);
     fieldSync = { overwritten: r.overwritten, fieldsChanged: r.fieldsChanged };
   } catch (err) {
     console.error("[onboarding-sync/refresh] field sync failed:", err);
   }
+  const fieldMs = ms(tField);
 
   const nextRefreshAllowedAt = await getCombinedNextRefreshAllowedAt();
+
+  const totalMs = ms(t0);
+  // Always log the stage breakdown (Hobby's 10s cap is the ceiling to watch).
+  // console.warn so it isn't stripped as a stray debug log; one line per refresh.
+  console.warn(
+    `[onboarding-sync/refresh] timing ms: snapshot=${snapshotMs} import=${importMs} field=${fieldMs} total=${totalMs}` +
+      ` (imported=${importSync?.imported ?? 0} synced=${fieldSync?.overwritten ?? 0})`
+  );
 
   return NextResponse.json({
     hubspot: hubspotOutcome,
@@ -107,5 +148,6 @@ export async function POST(request: NextRequest) {
     importSync,
     fieldSync,
     nextRefreshAllowedAt,
+    timingMs: { snapshot: snapshotMs, import: importMs, field: fieldMs, total: totalMs },
   });
 }

@@ -211,11 +211,23 @@ export function OnboardingGrid({
   async function handleManualRefresh() {
     if (manualRefreshDisabled || isRefreshing) return;
     setIsRefreshing(true);
+    // 17E — the refresh route runs several sequential stages and prod is on
+    // Vercel Hobby (hard 10s function cap). A platform timeout kills the function
+    // with NO response, so the fetch would otherwise hang until the browser's own
+    // long default. Abort just past the cap and tell the CSA honestly that some
+    // changes may not have applied, rather than spinning silently. Work already
+    // committed server-side by earlier stages is safe (each stage is idempotent);
+    // the next refresh or the hourly cron finishes the rest.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 11_000);
     try {
       const params = new URLSearchParams({ pipeline });
       if (owner !== "all") params.set("owner", owner);
       if (search) params.set("search", search);
-      const res = await fetch(`/api/onboarding-sync/refresh?${params.toString()}`, { method: "POST" });
+      const res = await fetch(`/api/onboarding-sync/refresh?${params.toString()}`, {
+        method: "POST",
+        signal: controller.signal,
+      });
       const json = (await res.json()) as OnboardingSyncRefreshResponse & { error?: string };
       if (!res.ok) {
         toast.error(json.error ?? "Refresh failed.");
@@ -241,9 +253,21 @@ export function OnboardingGrid({
       if (parts.length > 0) {
         toast.success(`Refreshed — ${parts.join(", ")}.`);
       }
-    } catch {
-      toast.error("Refresh failed.");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Hit the client cap — the server may still be finishing. Be honest:
+        // some changes might not have applied; a follow-up refresh is safe.
+        toast.warning(
+          "Refresh is taking longer than expected — some changes may not have applied. Try again shortly.",
+        );
+        // Revalidate anyway: earlier stages likely committed the snapshot before
+        // the abort, so the board can still reflect what did land.
+        await mutate();
+      } else {
+        toast.error("Refresh failed.");
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsRefreshing(false);
     }
   }
