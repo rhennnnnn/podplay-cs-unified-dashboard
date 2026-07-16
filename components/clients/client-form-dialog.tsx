@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TrackingMultiSelect } from "@/components/shared/tracking-multi-select";
+import { Switch } from "@/components/ui/switch";
 
 const STATUS_OPTIONS: LocationStatus[] = ["on-track", "at-risk", "delayed", "opened"];
 const TIER_OPTIONS = ["Basic (+)", "Pro/Auto (+)"];
@@ -37,6 +38,7 @@ interface FormState {
   tier: string;
   opening_date: string;
   presale_date: string;
+  presale_date_na: boolean;
   delivery_date: string;
   qc_date: string;
   tracker: string[];
@@ -64,6 +66,7 @@ function toFormState(location?: Location): FormState {
     tier: location?.tier ?? "",
     opening_date: location?.opening_date ?? "",
     presale_date: location?.presale_date ?? "",
+    presale_date_na: location?.presale_date_na ?? false,
     delivery_date: location?.delivery_date ?? "",
     qc_date: location?.qc_date ?? "",
     tracker: parseTracker(location?.tracker ?? null),
@@ -127,7 +130,9 @@ export function ClientFormDialog({
         name: form.name,
         tier: form.tier || null,
         opening_date: form.opening_date || null,
-        presale_date: form.presale_date || null,
+        // N/A wins: a confirmed "no pre-sale" clears any stray date value.
+        presale_date: form.presale_date_na ? null : form.presale_date || null,
+        presale_date_na: form.presale_date_na,
         delivery_date: form.delivery_date || null,
         qc_date: form.qc_date || null,
         tracker: joinTracker(form.tracker),
@@ -257,9 +262,20 @@ export function ClientFormDialog({
               <Input
                 id="presale_date"
                 type="date"
-                value={form.presale_date}
+                value={form.presale_date_na ? "" : form.presale_date}
+                disabled={form.presale_date_na}
                 onChange={(e) => update("presale_date", e.target.value)}
               />
+              <div className="flex items-center gap-2 pt-0.5">
+                <Switch
+                  id="presale_date_na"
+                  checked={form.presale_date_na}
+                  onCheckedChange={(v) => update("presale_date_na", v)}
+                />
+                <Label htmlFor="presale_date_na" className="text-xs font-normal text-muted-foreground">
+                  No pre-sale (N/A)
+                </Label>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="delivery_date">Hardware Delivery Date (manual)</Label>

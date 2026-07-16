@@ -535,6 +535,7 @@ export function ClientsTable({
         cell: ({ row }) => {
           const l = row.original;
           if (l.presale_date) return formatDate(l.presale_date);
+          if (l.presale_date_na) return <span className="text-muted-foreground">N/A</span>;
           return l.status === "opened" ? "—" : <MissingMark />;
         },
       },

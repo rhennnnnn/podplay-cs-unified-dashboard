@@ -63,7 +63,8 @@ export function computeRowFlags(
 
   const flags: RowFlags = {
     missingOpening: !completed && !location.opening_date,
-    missingPresale: !completed && !location.presale_date,
+    // Confirmed-N/A presale (019) is intentional, not missing — don't flag it.
+    missingPresale: !completed && !location.presale_date && !location.presale_date_na,
     missingHardware: !completed && hardwareRequired && hardware.value === null,
     noTracking: parseTracker(location.tracker).length === 0,
     hardwareRequired,
