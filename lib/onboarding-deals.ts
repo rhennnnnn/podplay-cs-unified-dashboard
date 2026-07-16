@@ -34,6 +34,7 @@ const LIST_PROPERTIES = [
   "deal_type",
   "anticipated_opening",
   "grand_opening",
+  "membership_presale_date",
   "hs_createdate",
   "hs_lastmodifieddate",
 ];
@@ -47,6 +48,7 @@ interface OnboardingProps {
   deal_type: string | null;
   anticipated_opening: string | null;
   grand_opening: string | null;
+  membership_presale_date: string | null;
   hs_createdate: string;
   hs_lastmodifieddate: string;
 }

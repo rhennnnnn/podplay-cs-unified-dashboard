@@ -190,7 +190,15 @@ export function ClientDetailSheet({
             <Field label="Tier" value={location.tier} />
             <Field
               label="Pre-sale Date"
-              value={location.presale_date ? formatDate(location.presale_date) : completed ? null : <MissingValue />}
+              value={
+                location.presale_date
+                  ? formatDate(location.presale_date)
+                  : location.presale_date_na
+                    ? "N/A"
+                    : completed
+                      ? null
+                      : <MissingValue />
+              }
             />
             <Field
               label="Hardware Delivery Date"

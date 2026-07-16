@@ -7,6 +7,9 @@ export interface Location {
   tier: string | null;
   opening_date: string | null;
   presale_date: string | null;
+  // 019 — true = confirmed "no pre-sale" (suppresses the missing-date alert);
+  // false = not yet set (blank presale_date still alerts as missing).
+  presale_date_na: boolean;
   delivery_date: string | null;
   tracker: string | null;
   status: LocationStatus;
