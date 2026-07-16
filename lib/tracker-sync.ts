@@ -30,6 +30,9 @@ import type { OnboardingListItem } from "@/components/onboarding/onboarding-type
 
 // Cap imports per tick so a large first-run backlog can't blow the Vercel Hobby
 // 10s cap. Remaining rows are picked up on the next heartbeat (idempotent).
+// This is the CRON default (a full hour to drain incrementally). The manual
+// refresh path (17E) passes a lower cap so a single user click always finishes
+// well under 10s even under heavy backlog — see refresh route.
 const MAX_IMPORTS_PER_TICK = 25;
 
 export interface TrackerSyncResult {
@@ -164,7 +167,10 @@ function toIsoFromFlex(value: string | null | undefined): string | null {
   return `${y}-${m}-${day}`;
 }
 
-export async function runTrackerImportSync(actorEmail: string): Promise<TrackerSyncResult> {
+export async function runTrackerImportSync(
+  actorEmail: string,
+  maxImports: number = MAX_IMPORTS_PER_TICK
+): Promise<TrackerSyncResult> {
   const admin = createAdminClient();
 
   const result: TrackerSyncResult = {
@@ -197,7 +203,7 @@ export async function runTrackerImportSync(actorEmail: string): Promise<TrackerS
     for (const deal of deals) {
       // Combined write budget (inserts + tracker fills) so a large first-run
       // backlog can't blow the Vercel Hobby 10s cap. Remainder drains next tick.
-      if (result.imported + result.trackerFilled >= MAX_IMPORTS_PER_TICK) {
+      if (result.imported + result.trackerFilled >= maxImports) {
         result.importCapped = true;
         break;
       }

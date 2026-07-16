@@ -46,6 +46,9 @@ type SharedField = (typeof SHARED_FIELDS)[number];
 // Cap real overwrites/fills per tick (locations touched) so a large first-run
 // drift can't blow the Vercel Hobby 10s cap. Baseline seeding is bulk (one
 // upsert) and not counted. Remainder drains next heartbeat (idempotent).
+// This is the CRON default (a full hour to drain incrementally). The manual
+// refresh path (17E) passes a lower cap so a single user click always finishes
+// well under 10s even under heavy backlog — see refresh route.
 const MAX_SYNC_WRITES_PER_TICK = 25;
 
 export interface FieldSyncResult {
@@ -149,7 +152,10 @@ function observeField(
   return obs;
 }
 
-export async function runFieldSync(actorEmail: string): Promise<FieldSyncResult> {
+export async function runFieldSync(
+  actorEmail: string,
+  maxWrites: number = MAX_SYNC_WRITES_PER_TICK
+): Promise<FieldSyncResult> {
   const admin = createAdminClient();
 
   const result: FieldSyncResult = {
@@ -358,7 +364,7 @@ export async function runFieldSync(actorEmail: string): Promise<FieldSyncResult>
 
     if (change) {
       pending.push(change);
-      if (pending.length >= MAX_SYNC_WRITES_PER_TICK) {
+      if (pending.length >= maxWrites) {
         result.capped = true;
         stop = true;
       }
