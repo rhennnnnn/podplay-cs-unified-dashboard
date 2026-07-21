@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -20,6 +21,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Columns3,
   ChevronRight,
   ClipboardList,
   ExternalLink,
@@ -96,6 +98,24 @@ interface ClientsTableProps {
   rosterMap: Record<string, string>;
   mrpByLocation: Record<string, MrpRecord | null>;
 }
+
+// Friendly labels for the Columns show/hide dropdown, keyed by column id.
+// "date" is tab-dependent, resolved inline in the render.
+const COLUMN_LABELS: Record<string, string> = {
+  client_name: "Client Name",
+  name: "Location",
+  tier: "Tier",
+  presale_date: "Pre-sale Date",
+  hardware_delivery: "Hardware Delivery Date",
+  box_shipped: "PP Hardware Box Shipped",
+  box_delivered: "PP Hardware Box Delivered",
+  qc_date: "QC Date",
+  tracker: "Tracking",
+  notes: "Notes",
+  readiness: "Readiness",
+  status: "Status",
+  followUp: "Follow-up",
+};
 
 const STATUS_SORT_RANK: Record<LocationStatus, number> = {
   "on-track": 0,
@@ -250,6 +270,9 @@ export function ClientsTable({
   const [trackerSel, setTrackerSel] = React.useState<string[]>([]);
   const [statusSel, setStatusSel] = React.useState<string[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "date", desc: false }]);
+  // Client Name hidden by default; user re-shows it via the Columns dropdown.
+  // Session-scoped only (component state) — no browser storage, per project persistence rule.
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({ client_name: false });
 
   const [selected, setSelected] = React.useState<Location | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -690,6 +713,7 @@ export function ClientsTable({
       id: "actions",
       header: "",
       enableSorting: false,
+      enableHiding: false,
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -754,8 +778,9 @@ export function ClientsTable({
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -885,6 +910,37 @@ export function ClientsTable({
                   </DropdownMenuItem>
                 </>
               )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Columns3 className="h-4 w-4" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[70vh] w-56 overflow-y-auto">
+              {table
+                .getAllLeafColumns()
+                .filter((col) => col.getCanHide())
+                .map((col) => {
+                  const label =
+                    col.id === "date"
+                      ? tab === "opened"
+                        ? "Opened Date"
+                        : "Opening Date"
+                      : COLUMN_LABELS[col.id] ?? col.id;
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={col.getIsVisible()}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(v) => col.toggleVisibility(!!v)}
+                    >
+                      {label}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
             </DropdownMenuContent>
           </DropdownMenu>
         </CardContent>
