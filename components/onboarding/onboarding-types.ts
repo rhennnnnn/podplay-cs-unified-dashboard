@@ -15,7 +15,7 @@ export interface OnboardingListItem {
   };
   contact: { id: string; name: string; email: string | null } | null;
   company: { id: string; name: string | null; domain: string | null } | null;
-  lastEmail: { timestamp: string; direction: string } | null;
+  lastEmail: { timestamp: string; direction: string; senderName: string | null; senderEmail: string | null } | null;
 }
 
 export interface DealsResponse {

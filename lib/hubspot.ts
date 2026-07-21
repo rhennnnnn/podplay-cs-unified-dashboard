@@ -408,27 +408,60 @@ export const EMAIL_DIRECTION_LABEL: Record<string, string> = {
 export interface LastEmail {
   timestamp: string;
   direction: string;
+  // Display name of whoever sent the email (client contact or PodPlay owner),
+  // taken from the email engagement's own from-name metadata. null when HubSpot
+  // logged the email without a resolvable sender.
+  senderName: string | null;
+  // Sender's email address — used to classify the sender as PodPlay vs client by
+  // domain, which is more reliable than hs_email_direction (a PodPlay person's
+  // email can still be logged as INCOMING_EMAIL). null when unavailable.
+  senderEmail: string | null;
+}
+
+interface LastEmailProps {
+  hs_timestamp: string | null;
+  hs_email_direction: string | null;
+  hs_email_from_firstname: string | null;
+  hs_email_from_lastname: string | null;
+  hs_email_from_email: string | null;
 }
 
 // Fetches the single most recent email logged on an onboarding record. Kept
 // separate from the general activity feed (notes/calls/tasks) because the
 // board only needs this one signal per card, cheaply, for every card at once.
 export async function getLastEmail(dealId: string): Promise<LastEmail | null> {
-  const emailIds = (await getAssociatedIds(ONBOARDING_OBJECT_TYPE, dealId, "emails")).slice(0, 100);
+  const emailIds = await getAssociatedIds(ONBOARDING_OBJECT_TYPE, dealId, "emails");
   if (emailIds.length === 0) return null;
 
-  const emails = await batchReadObjects<{ hs_timestamp: string | null; hs_email_direction: string | null }>(
-    "emails",
-    emailIds,
-    ["hs_timestamp", "hs_email_direction"]
-  );
-
+  // Scan EVERY associated email and keep the newest. HubSpot returns associations
+  // in creation order (oldest first), NOT by recency — the old "slice the first
+  // 100 ids then pick the latest of those" shortcut silently returned a stale
+  // email on records with a long history (House of Pickle Currumbin: 429 emails,
+  // the first 100 topped out in January while the real latest was in July). The
+  // batch/read endpoint caps at 100 ids per call, so chunk in 100s. This only
+  // runs on the hourly cron sweep — the manual refresh fast path reuses the prior
+  // snapshot's values and never calls this.
   let latest: LastEmail | null = null;
-  for (const e of Object.values(emails)) {
-    const ts = e.properties.hs_timestamp;
-    if (!ts) continue;
-    if (!latest || new Date(ts).getTime() > new Date(latest.timestamp).getTime()) {
-      latest = { timestamp: ts, direction: e.properties.hs_email_direction ?? "EMAIL" };
+  for (let i = 0; i < emailIds.length; i += 100) {
+    const emails = await batchReadObjects<LastEmailProps>("emails", emailIds.slice(i, i + 100), [
+      "hs_timestamp",
+      "hs_email_direction",
+      "hs_email_from_firstname",
+      "hs_email_from_lastname",
+      "hs_email_from_email",
+    ]);
+    for (const e of Object.values(emails)) {
+      const ts = e.properties.hs_timestamp;
+      if (!ts) continue;
+      if (!latest || new Date(ts).getTime() > new Date(latest.timestamp).getTime()) {
+        const p = e.properties;
+        latest = {
+          timestamp: ts,
+          direction: p.hs_email_direction ?? "EMAIL",
+          senderName: [p.hs_email_from_firstname, p.hs_email_from_lastname].filter(Boolean).join(" ").trim() || null,
+          senderEmail: p.hs_email_from_email ?? null,
+        };
+      }
     }
   }
   return latest;
