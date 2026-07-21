@@ -100,7 +100,7 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
             {grandOpening.absolute}
           </span>
         ) : (
-          <span className="shrink-0 text-muted-foreground">Missing Grand Opening Date</span>
+          <span className="shrink-0 text-muted-foreground">Missing</span>
         )}
       </div>
 
@@ -117,7 +117,14 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
         >
           <Mail className="h-3 w-3 shrink-0" />
           {[
-            EMAIL_DIRECTION_LABEL[deal.lastEmail.direction] ?? "Email",
+            // Client vs PodPlay by sender domain — more reliable than
+            // hs_email_direction, which can log a PodPlay person's email as
+            // INCOMING. Fall back to the direction label when no sender email.
+            deal.lastEmail.senderEmail
+              ? deal.lastEmail.senderEmail.toLowerCase().endsWith("@podplay.app")
+                ? "PodPlay"
+                : "Client"
+              : EMAIL_DIRECTION_LABEL[deal.lastEmail.direction] ?? "Email",
             deal.lastEmail.senderName,
             formatRelativeTime(deal.lastEmail.timestamp),
           ]

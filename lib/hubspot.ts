@@ -412,6 +412,10 @@ export interface LastEmail {
   // taken from the email engagement's own from-name metadata. null when HubSpot
   // logged the email without a resolvable sender.
   senderName: string | null;
+  // Sender's email address — used to classify the sender as PodPlay vs client by
+  // domain, which is more reliable than hs_email_direction (a PodPlay person's
+  // email can still be logged as INCOMING_EMAIL). null when unavailable.
+  senderEmail: string | null;
 }
 
 interface LastEmailProps {
@@ -455,6 +459,7 @@ export async function getLastEmail(dealId: string): Promise<LastEmail | null> {
           timestamp: ts,
           direction: p.hs_email_direction ?? "EMAIL",
           senderName: [p.hs_email_from_firstname, p.hs_email_from_lastname].filter(Boolean).join(" ").trim() || null,
+          senderEmail: p.hs_email_from_email ?? null,
         };
       }
     }
