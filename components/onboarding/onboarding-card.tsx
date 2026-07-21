@@ -100,7 +100,7 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
             {grandOpening.absolute}
           </span>
         ) : (
-          <span className="shrink-0 text-muted-foreground">Missing</span>
+          <span className="shrink-0 text-muted-foreground">No Grand Opening</span>
         )}
       </div>
 
@@ -125,7 +125,10 @@ export function OnboardingCard({ deal, owner, isTracked, stageIsClosed, onOpen }
                 ? "PodPlay"
                 : "Client"
               : EMAIL_DIRECTION_LABEL[deal.lastEmail.direction] ?? "Email",
-            deal.lastEmail.senderName,
+            // Sender name; fall back to the sender's email address when HubSpot
+            // logged no from-name, so the line never collapses to just the
+            // Client/PodPlay prefix.
+            deal.lastEmail.senderName ?? deal.lastEmail.senderEmail,
             formatRelativeTime(deal.lastEmail.timestamp),
           ]
             .filter(Boolean)
