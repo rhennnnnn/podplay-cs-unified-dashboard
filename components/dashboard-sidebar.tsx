@@ -191,7 +191,7 @@ function SidebarBody({
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#0F1B3D] text-[#93a3c9]">
+    <div className="flex h-full flex-col bg-[#0F1B3D] dark:bg-[#0b142b] text-[#93a3c9]">
       <BrandMark collapsed={collapsed} />
       {onToggleCollapse && (
         <button
@@ -254,7 +254,7 @@ export function DashboardSidebar({ email, isAdmin = false }: { email: string; is
         />
       </aside>
 
-      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0F1B3D] px-4 py-3 text-white md:hidden">
+      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0F1B3D] dark:bg-[#0b142b] px-4 py-3 text-white md:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
