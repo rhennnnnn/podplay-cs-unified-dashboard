@@ -13,6 +13,7 @@ import {
   Menu,
   Activity,
   Globe,
+  Archive,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const COLLAPSE_KEY = "podplay-sidebar-collapsed";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: Home },
   { href: "/dashboard/clients", label: "Client Opening Tracker", icon: ClipboardList },
+  { href: "/dashboard/closed-locations", label: "Closed Locations", icon: Archive },
   { href: "/dashboard/onboarding", label: "HubSpot Onboarding", icon: Link2 },
   { href: "/dashboard/ops-guide", label: "OPS Guide", icon: Wrench },
   { href: "/dashboard/settings/accounts", label: "Team", icon: Users },
@@ -191,7 +193,7 @@ function SidebarBody({
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#0F1B3D] text-[#93a3c9]">
+    <div className="flex h-full flex-col bg-[#0F1B3D] dark:bg-[#0b142b] text-[#93a3c9]">
       <BrandMark collapsed={collapsed} />
       {onToggleCollapse && (
         <button
@@ -254,7 +256,7 @@ export function DashboardSidebar({ email, isAdmin = false }: { email: string; is
         />
       </aside>
 
-      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0F1B3D] px-4 py-3 text-white md:hidden">
+      <div className="flex items-center gap-3 border-b border-white/10 bg-[#0F1B3D] dark:bg-[#0b142b] px-4 py-3 text-white md:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">

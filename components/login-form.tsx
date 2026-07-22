@@ -60,6 +60,28 @@ const LOGIN_STYLES = `
   .pp-login .login-sub { margin: 0 auto; }
   .pp-login .login-card { margin: 0 auto; }
 }
+
+/* Dark mode — next-themes sets class="dark" on <html>; the choice persists, so
+   the login screen honors it too. */
+.dark .pp-login { background: radial-gradient(130% 120% at 78% 10%, #0f1a30, #070b16); color: #e6ebf5; }
+.dark .pp-login .login-wordmark span { color: rgba(230,235,245,.4); }
+.dark .pp-login .login-eyebrow { color: #6ea8ff; }
+.dark .pp-login .login-eyebrow span { background: #6ea8ff; }
+.dark .pp-login .login-hero { color: #f3f6fc; }
+.dark .pp-login .login-sub { color: rgba(230,235,245,.6); }
+.dark .pp-login .login-sub strong { color: #f3f6fc; }
+.dark .pp-login .login-card { background: #131b2e; box-shadow: 0 30px 70px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3); }
+.dark .pp-login .login-card h2 { color: #f3f6fc; }
+.dark .pp-login .login-lead { color: rgba(230,235,245,.55); }
+.dark .pp-login .login-input { background: #0f1626; border-color: rgba(230,235,245,.12); }
+.dark .pp-login .login-input > svg { color: rgba(230,235,245,.45); }
+.dark .pp-login .login-input:focus-within { background: #0f1626; border-color: #3f86ff; box-shadow: 0 0 0 4px rgba(63,134,255,.2); }
+.dark .pp-login .login-input:focus-within > svg { color: #6ea8ff; }
+.dark .pp-login .login-card input { color: #f3f6fc; }
+.dark .pp-login .login-card input::placeholder { color: rgba(230,235,245,.35); }
+.dark .pp-login .login-eye { color: rgba(230,235,245,.45); }
+.dark .pp-login .login-hint { color: rgba(230,235,245,.5); }
+.dark .pp-login .login-hint a { color: #6ea8ff; border-bottom-color: rgba(110,168,255,.35); }
 `;
 
 export function LoginForm() {

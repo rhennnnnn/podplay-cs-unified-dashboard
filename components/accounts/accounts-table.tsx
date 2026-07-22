@@ -53,6 +53,31 @@ const TEAM_STYLES = `
 @media (min-width: 768px) {
   .pp-team .pp-topbar { margin: -32px -32px 0; padding: 22px 32px; }
 }
+
+/* Dark mode — next-themes sets class="dark" on <html>. Mirrors the light
+   scoped styles above with the PodPlay dark-navy palette. */
+.dark .pp-team { color: #e6ebf5; }
+.dark .pp-team .pp-topbar { background: #131b2e; border-bottom-color: #26314b; }
+.dark .pp-team .pp-topbar h1 { color: #e6ebf5; }
+.dark .pp-team .pp-topbar p { color: #94a3c0; }
+.dark .pp-team .pp-card { background: #131b2e; border-color: #26314b; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.dark .pp-team thead th { color: #7e8aa3; background: #0f1626; border-bottom-color: #26314b; }
+.dark .pp-team tbody td { border-bottom-color: #202a42; }
+.dark .pp-team tbody tr:last-child td { border-bottom: none; }
+.dark .pp-team tbody tr:hover { background: #1a2540; }
+.dark .pp-team .pp-name { color: #e6ebf5; }
+.dark .pp-team .pp-you { color: #7e8aa3; }
+.dark .pp-team .pp-email { color: #6ea8ff; }
+.dark .pp-team .pp-muted { color: #94a3c0; }
+.dark .pp-team .pp-seen { color: #94a3c0; }
+.dark .pp-team .pp-badge-admin { background: #1e2a52; color: #93b4ff; }
+.dark .pp-team .pp-badge-default { background: #202a42; color: #94a3c0; }
+.dark .pp-team .pp-badge-amber { background: #3a2e12; color: #f0c674; }
+.dark .pp-team .pp-icon-btn { color: #7e8aa3; }
+.dark .pp-team .pp-icon-btn:hover { background: #202a42; color: #e6ebf5; }
+.dark .pp-team .pp-icon-btn.pp-danger:hover { background: #3a1e24; color: #ff8798; }
+.dark .pp-team .pp-orphan { border-color: rgba(240,198,116,.35); background: #3a2e12; color: #f0c674; }
+.dark .pp-team .pp-empty { color: #7e8aa3; }
 `;
 
 const AVATAR_COLORS = [

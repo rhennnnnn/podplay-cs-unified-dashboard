@@ -1,5 +1,17 @@
 export type LocationStatus = "on-track" | "at-risk" | "delayed" | "opened";
 
+// Why a location shut down. Stored in locations.close_reason; a location is
+// considered "closed" once close_date is set.
+export type CloseReason = "churned" | "relocated" | "contract-ended" | "temporary" | "other";
+
+export const CLOSE_REASON_LABELS: Record<CloseReason, string> = {
+  churned: "Churned",
+  relocated: "Relocated",
+  "contract-ended": "Contract ended",
+  temporary: "Temporary closure",
+  other: "Other",
+};
+
 export interface Location {
   id: string;
   client_name: string | null;
@@ -22,6 +34,26 @@ export interface Location {
   csa_owner: string | null;
   hubspot_deal_id: string | null;
   mrp_row_key: string | null;
+}
+
+// Closed Locations (020) — a standalone log of locations that shut down.
+// Free-text client/location names (not linked to the tracker's `locations`),
+// so a closure can be recorded for any site, tracked or not.
+export interface ClosedLocation {
+  id: string;
+  client_name: string | null;
+  location_name: string;
+  close_date: string;
+  close_reason: CloseReason | null;
+  close_note: string | null;
+  created_by: string | null;
+  created_at: string;
+  // Personal reminder (021). remind_at is the resolved UTC timestamp to fire on
+  // (the form interprets the chosen date/time as US Eastern, America/New_York).
+  remind_at: string | null;
+  remind_user_email: string | null;
+  reminder_done: boolean;
+  reminder_slack_sent_at: string | null;
 }
 
 export type FieldSyncSource = "tracker" | "hubspot" | "mrp";
@@ -157,6 +189,12 @@ export interface Database {
         Row: LocationFieldSync;
         Insert: Partial<LocationFieldSync> & { location_id: string; field_name: string; source: FieldSyncSource; source_updated_at: string };
         Update: Partial<LocationFieldSync>;
+        Relationships: [];
+      };
+      closed_locations: {
+        Row: ClosedLocation;
+        Insert: Partial<ClosedLocation> & { location_name: string; close_date: string };
+        Update: Partial<ClosedLocation>;
         Relationships: [];
       };
       readiness: {

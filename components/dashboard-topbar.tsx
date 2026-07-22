@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 
 import { GlobalSearch } from "@/components/global-search";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // Route -> page title/subtitle for the top app bar. Most specific paths first.
 const PAGES: { prefix: string; title: string; subtitle: string }[] = [
@@ -10,6 +11,11 @@ const PAGES: { prefix: string; title: string; subtitle: string }[] = [
     prefix: "/dashboard/clients",
     title: "Client Opening Tracker",
     subtitle: "Track location opening dates, status, and CS follow-ups.",
+  },
+  {
+    prefix: "/dashboard/closed-locations",
+    title: "Closed Locations",
+    subtitle: "Locations that have shut down, grouped by client.",
   },
   {
     prefix: "/dashboard/onboarding",
@@ -50,8 +56,11 @@ export function DashboardTopbar() {
         <h1 className="text-xl font-semibold tracking-tight text-foreground">{page.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">{page.subtitle}</p>
       </div>
-      <div className="md:w-72 md:shrink-0">
-        <GlobalSearch />
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 md:w-72 md:flex-none md:shrink-0">
+          <GlobalSearch />
+        </div>
+        <ThemeToggle />
       </div>
     </header>
   );
