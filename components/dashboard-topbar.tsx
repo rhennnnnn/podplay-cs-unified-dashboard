@@ -13,6 +13,11 @@ const PAGES: { prefix: string; title: string; subtitle: string }[] = [
     subtitle: "Track location opening dates, status, and CS follow-ups.",
   },
   {
+    prefix: "/dashboard/closed-locations",
+    title: "Closed Locations",
+    subtitle: "Locations that have shut down, grouped by client.",
+  },
+  {
     prefix: "/dashboard/onboarding",
     title: "HubSpot Onboarding",
     subtitle: "Read-only board synced from HubSpot.",

@@ -13,6 +13,7 @@ import {
   Menu,
   Activity,
   Globe,
+  Archive,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const COLLAPSE_KEY = "podplay-sidebar-collapsed";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: Home },
   { href: "/dashboard/clients", label: "Client Opening Tracker", icon: ClipboardList },
+  { href: "/dashboard/closed-locations", label: "Closed Locations", icon: Archive },
   { href: "/dashboard/onboarding", label: "HubSpot Onboarding", icon: Link2 },
   { href: "/dashboard/ops-guide", label: "OPS Guide", icon: Wrench },
   { href: "/dashboard/settings/accounts", label: "Team", icon: Users },
